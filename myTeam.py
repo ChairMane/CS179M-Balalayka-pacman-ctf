@@ -51,6 +51,17 @@ class DummyAgent(CaptureAgent):
     create an agent as this is the bare minimum.
     """
 
+    
+
+    def get_drop_positions(self, gameState):
+        positions = []
+        for y in range(1, 15):
+            if gameState.hasWall(15, y):
+                positions.append((15, y))
+        return positions
+
+
+
     def registerInitialState(self, gameState):
         """
         This method handles the initial setup of the
@@ -81,18 +92,15 @@ class DummyAgent(CaptureAgent):
         """
         Picks among actions randomly.
         """
-        global best_action
+        #global best_action
         actions = gameState.getLegalActions(self.index)
-        if len(actions) is 1:
-            return actions[0]
 
         '''
         You should change this in your own agent.
         '''
         value = -10
         for action in actions:
-            new_state = self.getSuccessor(gameState, action)
-            new_value = self.action_value(gameState, new_state)
+            new_value = self.action_value(gameState, action)
             if new_value > value:
                 best_action = action
                 value = new_value
@@ -108,14 +116,18 @@ class DummyAgent(CaptureAgent):
         successor = gameState.generateSuccessor(self.index, action)
         return successor
     
-    def action_value(self, gameState, successor):
+    def action_value(self, gameState, action):
+        successor = self.getSuccessor(gameState, action)
         value = 0
+        act = action
+        flag = False
         current_food_positions = self.getFood(gameState).asList()
         next_food_positions = self.getFood(successor).asList()
 
         my_current_position = gameState.getAgentState(self.index).getPosition()
         my_next_position = successor.getAgentState(self.index).getPosition()
-
+        if my_next_position is (1, 1):
+            value -= 2
         if len(current_food_positions) is not len(next_food_positions):
             value += 0.8
         else:
@@ -127,29 +139,25 @@ class DummyAgent(CaptureAgent):
         #tempo_indices = self.getOpponents(successor)
         enemy_positions_value = 0
         closest_enemy_distance = 1000
-        flag = False
         for index in enemy_indices:
-            current_pos = gameState.getAgentPosition(index)
-            if current_pos:
-                current_distance = self.getMazeDistance(my_current_position, current_pos)
+            enemy_position = gameState.getAgentPosition(index)
+            if enemy_position:
+                current_distance = self.getMazeDistance(my_current_position, enemy_position)
+                next_distance = self.getMazeDistance(my_next_position, enemy_position)
+                if next_distance is 0:
+                    next_distance = 0.5
                 if current_distance < closest_enemy_distance:
                     closest_enemy_distance = current_distance
-                enemy_positions_value += 1 / current_distance
-            next_pos = successor.getAgentPosition(index)
-            if next_pos:
-                next_distance = self.getMazeDistance(my_next_position, next_pos)
-                enemy_positions_value -= 1 / next_distance
-            else:
-                flag = True
+                enemy_positions_value += 1 / current_distance - 1 / next_distance
 
-        if my_next_position[0] > 14:
+
+        if my_next_position[0] > 15:
             value += enemy_positions_value
+            if len(successor.getLegalActions(self.index)) is 2 and closest_enemy_distance < 4:
+                value -= 1
         else:
             value -= enemy_positions_value
-            if flag and closest_enemy_distance is 1:
-                value += 1
-        if len(successor.getLegalActions(self.index)) is 1 and closest_enemy_distance < 4:
-            value -= 1
+
         return value
 
 

@@ -22,7 +22,7 @@ import game
 # Team creation #
 #################
 
-def createTeam(firstIndex, secondIndex, isRed, first='DummyAgent', second='DummyAgent'):
+def createTeam(firstIndex, secondIndex, isRed, first='DummyAgent', second='UpFucker'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -53,8 +53,8 @@ class DummyAgent(CaptureAgent):
     create an agent as this is the bare minimum.
     """
 
-    def __init__(self):
-        CaptureAgent.__init__(self, self.index)
+    def __init__(self, index):
+        CaptureAgent.__init__(self, index)
         self.food_inside = 0
         self.flag_eat_mode = True
         # self.drop_positions = self.get_drop_positions()
@@ -183,3 +183,41 @@ class DummyAgent(CaptureAgent):
             value -= enemy_positions_value
 
         return value, flag_food_eaten
+
+
+class UpFucker(CaptureAgent):
+
+    def registerInitialState(self, gameState):
+        self.start = gameState.getAgentPosition(self.index)
+        CaptureAgent.registerInitialState(self, gameState)
+
+    def chooseAction(self, gameState):
+        """
+        Picks among the actions with the highest Q(s,a).
+        """
+        actions = gameState.getLegalActions(self.index)
+        values = [self.evaluate(gameState, action) for action in actions]
+        max_value = max(values)
+
+        decent_actions = [(action, value) for action, value in zip(actions, values) if value < max_value]
+        decent_actions.sort()
+        best_action = min(decent_actions)[0]
+        if best_action == Directions.STOP:
+            decent_actions.pop(0)
+            if not decent_actions:
+                best_action = Directions.STOP
+            else:
+                best_action = decent_actions[0][0]
+        return best_action
+
+    def evaluate(self, gameState, action):
+        successor = gameState.generateSuccessor(self.index, action)
+        food_list = self.getFood(successor).asList()
+        my_position = successor.getAgentState(self.index).getPosition()
+        food_distances = [self.getMazeDistance(my_position, food) for food in food_list]
+        food_distances.sort()
+        min_distance = food_distances[0]
+
+        return min_distance
+
+# TODO: I need to figure out how to make enemy agents count as walls when finding food

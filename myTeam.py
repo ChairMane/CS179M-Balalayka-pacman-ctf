@@ -122,7 +122,7 @@ class DummyAgent(CaptureAgent):
                 self.current_enemy_distanses_positions.append((self.getMazeDistance(self.my_current_position, pos), pos))
 
 
-        pacman_stomach_size = int(self.current_food_amount / 4 + 1)
+        pacman_stomach_size = int(self.current_food_amount / 3 + 1)
 
         if self.my_current_position[0] < 16:
             self.food_inside = 0

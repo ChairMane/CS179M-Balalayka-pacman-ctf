@@ -108,7 +108,8 @@ class DummyAgent(CaptureAgent):
         self.current_food_positions = self.getFood(gameState).asList()
         self.current_food_amount = len(self.current_food_positions)
         self.my_food_positions = self.get_my_food_positions(gameState)
-        self.current_food_distance = min([self.getMazeDistance(self.my_current_position, food) for food in self.my_food_positions])
+        if len(self.my_food_positions) > 0:
+            self.my_food_distance = min([self.getMazeDistance(self.my_current_position, food) for food in self.my_food_positions])
         self.drop_positions = self.get_drop_positions(gameState)
         self.current_drop_distance = min([self.getMazeDistance(self.my_current_position, drop) for drop in self.drop_positions])
 
@@ -154,8 +155,7 @@ class DummyAgent(CaptureAgent):
         return successor
 
     def get_my_food_positions(self, gameState):
-        result = []
-        return result
+        return self.current_food_positions
 
     def action_value(self, gameState, action):
         successor = self.getSuccessor(gameState, action)
@@ -171,7 +171,7 @@ class DummyAgent(CaptureAgent):
             if next_food_distance is 0:
                 next_food_distance = 0.5
                 flag_food_taken = True
-            value += 1 / next_food_distance - 1 / self.current_food_distance
+            value += 1 / next_food_distance - 1 / self.my_food_distance
         elif self.food_inside > 0:
             next_drop_distance = min([self.getMazeDistance(my_next_position, drop) for drop in self.drop_positions])
             if next_drop_distance is 0:

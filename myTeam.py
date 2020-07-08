@@ -22,7 +22,7 @@ import game
 # Team creation #
 #################
 
-def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='Agent_South'):
+def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='UpFucker'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -227,7 +227,7 @@ class UpFucker(CaptureAgent):
         # TODO:
         # Since changing the evaluation function, a different
         # comparison must be made. Not just value < max_value
-        decent_actions = [(action, value) for action, value in zip(actions, values) if value < max_value]
+        decent_actions = [(action, value) for action, value in zip(actions, values)]
         decent_actions.sort()
         best_action = min(decent_actions)[0]
         if best_action == Directions.STOP:
@@ -275,9 +275,8 @@ class UpFucker(CaptureAgent):
             if enemy_position:
                 distances.append((self.getMazeDistance(my_position, enemy_position), opp))
             else:
-                continue
-
-        return 1
+                distances.append((9999, opp))
+        return distances
 
     def getWeights(self):
         return {}

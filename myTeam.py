@@ -214,9 +214,9 @@ class DummyAgent(CaptureAgent):
             enemy_position_change = self.enemy_distance_value(current_enemy_distance, next_enemy_distance)
             if my_next_position[0] > 15:
                 if current_enemy_position[0] < 15:
-                    enemy_positions_value -= enemy_position_change
-                else:
                     enemy_positions_value += enemy_position_change
+                else:
+                    enemy_positions_value -= enemy_position_change
             else:
                 enemy_positions_value += enemy_position_change
 
@@ -224,8 +224,8 @@ class DummyAgent(CaptureAgent):
             #     next_enemy_distance = 0.5
             #     if current_enemy_position[0] < 16:
             #         value += 1
-            # if current_enemy_distance < closest_enemy_distance:
-            #     closest_enemy_distance = current_enemy_distance
+            if current_enemy_distance < closest_enemy_distance:
+                closest_enemy_distance = current_enemy_distance
             # enemy_positions_value += 1 / current_enemy_distance - 1 / next_enemy_distance
 
         if my_next_position[0] > 15:

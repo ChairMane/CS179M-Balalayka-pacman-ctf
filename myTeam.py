@@ -140,7 +140,7 @@ class DummyAgent(CaptureAgent):
         flag_food_eaten = False
         for action in actions:
             if action is 'Stop':
-                new_action_value = 0
+                new_action_value = -0.3
                 tempo_flag = False
             else:
                 new_action_value, tempo_flag = self.action_value(gameState, action)
@@ -214,11 +214,11 @@ class DummyAgent(CaptureAgent):
             enemy_position_change = self.enemy_distance_value(current_enemy_distance, next_enemy_distance)
             if my_next_position[0] > 15:
                 if current_enemy_position[0] < 15:
-                    enemy_positions_value += enemy_position_change
-                else:
                     enemy_positions_value -= enemy_position_change
+                else:
+                    enemy_positions_value += enemy_position_change
             else:
-                enemy_positions_value += enemy_position_change
+                enemy_positions_value -= enemy_position_change
 
             # if next_enemy_distance is 0:
             #     next_enemy_distance = 0.5
@@ -227,13 +227,12 @@ class DummyAgent(CaptureAgent):
             if current_enemy_distance < closest_enemy_distance:
                 closest_enemy_distance = current_enemy_distance
             # enemy_positions_value += 1 / current_enemy_distance - 1 / next_enemy_distance
-
+        value += enemy_positions_value
         if my_next_position[0] > 15:
-
-            if len(successor.getLegalActions(self.index)) is 2 and closest_enemy_distance < 5:
-                    value -= 0.3
-        else:
-            value -= enemy_positions_value
+            if len(successor.getLegalActions(self.index)) is 2:
+                value -= 0.2
+                if closest_enemy_distance < 4:
+                    value -= 0.2
 
         return value, flag_food_taken
 

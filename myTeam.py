@@ -199,6 +199,9 @@ class UpFucker(CaptureAgent):
         values = [self.evaluate(gameState, action) for action in actions]
         max_value = max(values)
 
+        # TODO:
+        # Since changing the evaluation function, a different
+        # comparison must be made. Not just value < max_value
         decent_actions = [(action, value) for action, value in zip(actions, values) if value < max_value]
         decent_actions.sort()
         best_action = min(decent_actions)[0]
@@ -211,13 +214,47 @@ class UpFucker(CaptureAgent):
         return best_action
 
     def evaluate(self, gameState, action):
+
+        features = self.getFeatures(gameState, action)
+        return features * 1
+
+    def getFeatures(self, gameState, action):
+        features = util.Counter()
+        weights = self.getWeights()
         successor = gameState.generateSuccessor(self.index, action)
-        food_list = self.getFood(successor).asList()
         my_position = successor.getAgentState(self.index).getPosition()
+
+        #_______ Food features __________
+        food_distances = self.getFoodDistances(successor, my_position)
+        features['minDistance'] = food_distances[0]
+
+        #_______ Enemy features _________
+        enemy_distances = self.getEnemyFuckers(successor,  my_position)
+        features['enemyDistance'] = enemy_distances
+
+
+        return features * weights
+
+    def getFoodDistances(self, successor, my_position):
+        food_list = self.getFood(successor).asList()
         food_distances = [self.getMazeDistance(my_position, food) for food in food_list]
         food_distances.sort()
-        min_distance = food_distances[0]
+        return food_distances
 
-        return min_distance
+    def getEnemyFuckers(self, successor, my_position):
+        opponents = self.getOpponents(successor)
+        distances = []
+        noisy_distances = successor.getAgentDistances()
+        for opp in opponents:
+            enemy_position = successor.getAgentPosition(opp)
+            if enemy_position:
+                distances.append((self.getMazeDistance(my_position, enemy_position), opp))
+            else:
+                continue
+
+        return 1
+
+    def getWeights(self):
+        return {}
 
 # TODO: I need to figure out how to make enemy agents count as walls when finding food

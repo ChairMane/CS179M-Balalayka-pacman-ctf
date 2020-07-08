@@ -22,7 +22,7 @@ import game
 # Team creation #
 #################
 
-def createTeam(firstIndex, secondIndex, isRed, first='DummyAgent', second='DummyAgent'):
+def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='Agent_South'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -53,16 +53,17 @@ class DummyAgent(CaptureAgent):
     create an agent as this is the bare minimum.
     """
 
-    def __init__(self):
-        CaptureAgent.__init__(self, self.index)
+    def __init__(self, index):
+        CaptureAgent.__init__(self, index)
         self.food_inside = 0
         self.flag_eat_mode = True
-        # self.drop_positions = self.get_drop_positions()
+        #self.drop_positions = self.get_drop_positions()
+        self.current_food_positions = []
 
     def get_drop_positions(self, gameState):
         positions = []
         for y in range(1, 15):
-            if gameState.hasWall(15, y):
+            if not gameState.hasWall(15, y):
                 positions.append((15, y))
         return positions
 
@@ -96,18 +97,48 @@ class DummyAgent(CaptureAgent):
         Picks among actions randomly.
         """
         # global best_action
+        #my_dist = gameState.getAgentDistances()
+
         actions = gameState.getLegalActions(self.index)
 
         '''
         You should change this in your own agent.
         '''
-        value = -10
+        self.my_current_position = gameState.getAgentState(self.index).getPosition()
+        self.current_food_positions = self.getFood(gameState).asList()
+        self.current_food_amount = len(self.current_food_positions)
+        self.my_food_positions = self.get_my_food_positions(gameState)
+        self.current_food_distance = min([self.getMazeDistance(self.my_current_position, food) for food in self.my_food_positions])
+        self.drop_positions = self.get_drop_positions(gameState)
+        self.current_drop_distance = min([self.getMazeDistance(self.my_current_position, drop) for drop in self.drop_positions])
+
+        self.enemy_indices = self.getOpponents(gameState)
+        self.current_enemy_positions = []
+        self.current_enemy_distanses_positions = []
+        for index in self.enemy_indices:
+            pos = gameState.getAgentPosition(index)
+            if pos:
+                self.current_enemy_distanses_positions.append((self.getMazeDistance(self.my_current_position, pos), pos))
+
+
+        pacman_stomach_size = int(self.current_food_amount / 4 + 1)
+
+        if self.my_current_position[0] < 16:
+            self.food_inside = 0
+        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size:
+            self.flag_eat_mode = False
+        else:
+            self.flag_eat_mode = True
+
+
+
+        action_value = -10
         flag_food_eaten = False
         for action in actions:
-            new_value, tempo_flag = self.action_value(gameState, action)
-            if new_value > value:
+            new_action_value, tempo_flag = self.action_value(gameState, action)
+            if new_action_value > action_value:
                 best_action = action
-                value = new_value
+                action_value = new_action_value
                 flag_food_eaten = tempo_flag
 
         if flag_food_eaten:
@@ -122,64 +153,84 @@ class DummyAgent(CaptureAgent):
         successor = gameState.generateSuccessor(self.index, action)
         return successor
 
+    def get_my_food_positions(self, gameState):
+        result = []
+        return result
+
     def action_value(self, gameState, action):
         successor = self.getSuccessor(gameState, action)
         value = 0
-        act = action
-        flag_food_eaten = False
+        if action is 'Stop':
+            value -= 0.1
+        flag_food_taken = False
 
-        my_current_position = gameState.getAgentState(self.index).getPosition()
         my_next_position = successor.getAgentState(self.index).getPosition()
 
-        if my_current_position[0] < 16:
-            self.food_inside = 0
-
-        current_food_positions = self.getFood(gameState).asList()
-        current_food_amount = len(current_food_positions)
-
-        if current_food_amount < 3 or self.food_inside > 5:
-            self.flag_eat_mode = False
-        else:
-            self.flag_eat_mode = True
-
         if self.flag_eat_mode:
-            next_food_positions = self.getFood(successor).asList()
-            next_food_amount = len(next_food_positions)
-            if current_food_amount == next_food_amount + 1:
-                value += 0.8
-                flag_food_eaten = True
-            else:
-                current_food_distance = min([self.getMazeDistance(my_current_position, food) for food in current_food_positions])
-                next_food_distance = min([self.getMazeDistance(my_next_position, food) for food in next_food_positions])
-                value += 1 / next_food_distance - 1 / current_food_distance
-        else:
-            drop_positions = self.get_drop_positions(gameState)
-            current_drop_distance = min([self.getMazeDistance(my_current_position, drop) for drop in drop_positions])
-            next_drop_distance = min([self.getMazeDistance(my_next_position, drop) for drop in drop_positions])
-            value += 1 / next_drop_distance - 1 / current_drop_distance
+            next_food_distance = min([self.getMazeDistance(my_next_position, food) for food in self.my_food_positions])
+            if next_food_distance is 0:
+                next_food_distance = 0.5
+                flag_food_taken = True
+            value += 1 / next_food_distance - 1 / self.current_food_distance
+        elif self.food_inside > 0:
+            next_drop_distance = min([self.getMazeDistance(my_next_position, drop) for drop in self.drop_positions])
+            if next_drop_distance is 0:
+                self.food_inside = 0
+                self.flag_eat_mode = True
+                return 5, False
+            value += 1 / next_drop_distance
+            value -= 1 / self.current_drop_distance
 
         if my_next_position is (1, 1):
             value -= 2
 
-        enemy_indices = self.getOpponents(gameState)
         enemy_positions_value = 0
         closest_enemy_distance = 1000
-        for index in enemy_indices:
-            enemy_position = gameState.getAgentPosition(index)
-            if enemy_position:
-                current_distance = self.getMazeDistance(my_current_position, enemy_position)
-                next_distance = self.getMazeDistance(my_next_position, enemy_position)
-                if next_distance is 0:
-                    next_distance = 0.5
-                if current_distance < closest_enemy_distance:
-                    closest_enemy_distance = current_distance
-                enemy_positions_value += 1 / current_distance - 1 / next_distance
+        for item in self.current_enemy_distanses_positions:
+            current_enemy_distance = item[0]
+            current_enemy_position = item[1]
+            next_enemy_distance = self.getMazeDistance(my_next_position, current_enemy_position)
+            if next_enemy_distance is 0:
+                next_enemy_distance = 0.5
+                if current_enemy_position[0] < 16:
+                    value += 1
+            if current_enemy_distance < closest_enemy_distance:
+                closest_enemy_distance = current_enemy_distance
+            enemy_positions_value += 1 / current_enemy_distance - 1 / next_enemy_distance
 
-        if my_next_position[0] > 15:
+        if my_next_position[0] > 14:
             value += enemy_positions_value
-            if len(successor.getLegalActions(self.index)) is 2 and closest_enemy_distance < 4:
-                value -= 1
+            if len(successor.getLegalActions(self.index)) is 2:
+                value -= 0.9
+                if closest_enemy_distance < 4:
+                    value -= 1
         else:
-            value -= enemy_positions_value
+            value -= enemy_positions_value * 1.3
 
-        return value, flag_food_eaten
+        return value, flag_food_taken
+
+class Agent_North(DummyAgent):
+    def get_my_food_positions(self, gameState):
+        n = len(self.current_food_positions)
+        sum = 0
+        for item in self.current_food_positions:
+            sum += item[1]
+        avg = sum / n
+        result = []
+        for pos in self.current_food_positions:
+            if pos[1] > avg:
+                result.append(pos)
+        return result
+
+class Agent_South(DummyAgent):
+    def get_my_food_positions(self, gameState):
+        n = len(self.current_food_positions)
+        sum = 0
+        for item in self.current_food_positions:
+            sum += item[1]
+        avg = sum / n
+        result = []
+        for pos in self.current_food_positions:
+            if pos[1] <= avg:
+                result.append(pos)
+        return result

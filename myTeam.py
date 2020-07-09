@@ -22,7 +22,7 @@ import game
 # Team creation #
 #################
 
-def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='UpFucker'):
+def createTeam(firstIndex, secondIndex, isRed, first='DummyAgent', second='UpFucker'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -225,23 +225,21 @@ class UpFucker(CaptureAgent):
         max_value = max(values)
 
         # TODO:
-        # Since changing the evaluation function, a different
-        # comparison must be made. Not just value < max_value
-        decent_actions = [(action, value) for action, value in zip(actions, values)]
+        # Check out better evaluation function
+        avg_value = int(sum(values) / len(values))
+        decent_actions = [(action, value) for action, value in zip(actions, values) if value in self.getDecentRange(max_value, avg_value)]
         decent_actions.sort()
         best_action = min(decent_actions)[0]
-        if best_action == Directions.STOP:
-            decent_actions.pop(0)
-            if not decent_actions:
-                best_action = Directions.STOP
-            else:
-                best_action = decent_actions[0][0]
         return best_action
+
+    def getDecentRange(self, value, avg_value):
+        return range((value - avg_value), (value + avg_value))
 
     def evaluate(self, gameState, action):
 
         features = self.getFeatures(gameState, action)
-        return features * 1
+        weights = self.getWeights()
+        return features * weights
 
     def getFeatures(self, gameState, action):
         features = util.Counter()
@@ -251,14 +249,14 @@ class UpFucker(CaptureAgent):
 
         #_______ Food features __________
         food_distances = self.getFoodDistances(successor, my_position)
-        features['minDistance'] = food_distances[0]
+        features['foodDistance'] = food_distances[0]
 
         #_______ Enemy features _________
         enemy_distances = self.getEnemyFuckers(successor,  my_position)
         features['enemyDistance'] = enemy_distances
 
 
-        return features * weights
+        return features
 
     def getFoodDistances(self, successor, my_position):
         food_list = self.getFood(successor).asList()
@@ -269,17 +267,18 @@ class UpFucker(CaptureAgent):
     def getEnemyFuckers(self, successor, my_position):
         opponents = self.getOpponents(successor)
         distances = []
-        noisy_distances = successor.getAgentDistances()
+        noisy_distances = [(dis, index) for index, dis in enumerate(successor.getAgentDistances()) if index in opponents]
         for opp in opponents:
             enemy_position = successor.getAgentPosition(opp)
             if enemy_position:
                 distances.append((self.getMazeDistance(my_position, enemy_position), opp))
             else:
                 distances.append((9999, opp))
-        return distances
+
+        return min(noisy_distances)[0] if all(v == 9999 for v, i in distances) else min(distances)[0]
 
     def getWeights(self):
-        return {}
+        return {'foodDistance' : 100, 'enemyDistance' : -1}
 
 class Agent_North(DummyAgent):
     def get_my_food_positions(self, gameState):

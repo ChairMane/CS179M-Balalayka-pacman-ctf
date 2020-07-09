@@ -92,7 +92,7 @@ class DummyAgent(CaptureAgent):
         """
         Picks among actions randomly.
         """
-        time.sleep(0.06)
+        #time.sleep(0.06)
         global best_action
         actions = gameState.getLegalActions(self.index)
         '''
@@ -244,19 +244,6 @@ class DummyAgent(CaptureAgent):
                             enemy_positions_value -= enemy_position_change
                     else:
                         enemy_positions_value += enemy_position_change
-
-                # if not next_is_home:
-                #     if self.at_home(current_enemy_position[0], 1):
-                #         enemy_positions_value -= enemy_position_change
-                #     else:
-                #         enemy_positions_value += enemy_position_change
-                # else:
-                #     if not self.is_home:
-                #         enemy_positions_value += enemy_position_change
-                #     if not self.at_home(current_enemy_position[0], 0) and current_enemy_distance == 1:
-                #         enemy_positions_value += 0
-                #     else:
-                #         enemy_positions_value -= enemy_position_change
 
             if current_enemy_distance < closest_enemy_distance:
                 closest_enemy_distance = current_enemy_distance

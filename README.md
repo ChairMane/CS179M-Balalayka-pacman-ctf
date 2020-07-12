@@ -29,7 +29,7 @@ For our agents we use value function to determine best next action.
 - if maze-distance to the food decreases, the value (of the value function) increases. Otherwise it decreases.
 - if maze-distance to the enemy decreases, the value (of the value function) increases. Otherwise it decreases.
 
-Also we take into account positions of the agents (on what side of the board we are), maze configuration (are we are approaching a dead end), “scary” agents etc. All those criteria can modify or reverse value function components.
+Also we take into account positions of the agents (on what side of the board we are), maze configuration (are we approaching a dead end?), “scary” agents etc. All those criteria can modify or reverse value function components.
 
 ### How:
 For calculating value of the distance change to the enemy we used formula: `log2(next distance / current distance)`.
@@ -54,6 +54,6 @@ Finally, our agents easily beat the baseline team a majority of the games run.
 
 ### Lessons learned
 We tried to compete against the agents of other groups, and almost every time agents (from both sides) stack in repetitive situations.
-Opposing agents will meet up, and constantly "dance" in front of each other. Once one of our agents meets an opposing agent, it will take what it considers the best move. The opposing agent then makes that same move, causing our agent to revert back to the previous situation. This continues until one agent is eaten.
+Opposing agents will meet up, and constantly "dance" in front of each other. Once agent meets an opposing agent, it will take what it considers the best move. The opposing agent does the same. And in this new state agent's best move to revert back to the previous state. And the opposing agent does the same. Cause situation repeat over and over again.
 This is because algorithm is sort of “greedy” and always tries to move to the best state.
 We are looking forward to create learning algorithm (or algorithm which can look several moves ahead), so we can solve this problem. 

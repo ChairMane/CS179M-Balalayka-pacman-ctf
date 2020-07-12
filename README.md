@@ -40,13 +40,14 @@ When the “stomach” is full, our agent stops seeking food and tries to find t
 ### Contributions:
 - Dmitri:
   - Wrote agents `Agent_North` and `Agent_South` that consistently beat the baseline team.
-  - Came up with the strategy
+  - Discussed agents strategy
   - Committed and pushed to github
 
 - Chris
   - Created and updated agent0 branch to hold current agents
+  - Discussed agents strategy
   - Wrote an agent `UpFucker` that will not be used currently
-  - Modified README
+
 
 ### Performance of Agent0:
 First our agent didn’t work very well, so we had to modify the “weights” of our values to make them more or less significant depending on the situation.

@@ -93,7 +93,10 @@ class DummyAgent(CaptureAgent):
         """
         Picks among actions randomly.
         """
+
+
         #time.sleep(0.06)
+
         global best_action
         actions = gameState.getLegalActions(self.index)
         '''

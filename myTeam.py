@@ -128,11 +128,11 @@ class DummyAgent(CaptureAgent):
                     self.closest_enemy_distance = dist
                 self.current_enemy_distances_positions.append((dist, pos))
 
-        pacman_stomach_size = int(self.current_food_amount / 3)
+        pacman_stomach_size = 5
         if self.my_food_distance < 3:
             pacman_stomach_size += 1
 
-        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (not self.is_home and self.current_drop_distance < 6 and self.food_inside > 0):
+        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (not self.is_home and self.current_drop_distance < 6 and self.food_inside > 1):
             self.flag_eat_mode = False
         else:
             self.flag_eat_mode = True

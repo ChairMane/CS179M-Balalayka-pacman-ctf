@@ -98,7 +98,7 @@ class DummyAgent(CaptureAgent):
 
         self.data_grid_radius = 5
         self.features_groups = 10
-        self.qualities = 5
+        self.qualities = 7
         self.data_set_current = []
 
     def get_indices(self, gameState):
@@ -134,9 +134,6 @@ class DummyAgent(CaptureAgent):
                 # what inside the grid grid_positions[0]
                 grid_positions[0, j * n + i] = 1
                 # walls grid_positions[1]
-                # print(self.my_current_position)
-                # print('y_current', y_current)
-                # print('x_current', x_current)
                 if gameState.hasWall(x_current, y_current):
                     grid_positions[1, j * n + i] = 1
         # food for me grid_positions[2]
@@ -183,6 +180,11 @@ class DummyAgent(CaptureAgent):
                     grid_positions[8 + i, (y_t - y_0) * n + x_t - x_0] = 1
         # food inside
         grid_qualities[4] = self.food_inside
+        # relative x of the agent
+        grid_qualities[5] = (x - self.field_mid_width) / self.field_width
+        # relative y of the agent
+        grid_qualities[6] = (y - self.field_mid_height) / self.field_height
+
         return np.concatenate((grid_positions.ravel(), grid_qualities))
 
     def add_move(self, act):
@@ -221,7 +223,7 @@ class DummyAgent(CaptureAgent):
             self.score = new_score
             if score_change > 0:
                 df = pd.DataFrame(self.data_set_current)
-                df.to_csv('my_data.csv', mode = 'a', header = False, index = False)
+                df.to_csv('my_data_collect.csv', mode = 'a', header = False, index = False)
             del self.data_set_current[:]
 
         # end data collection

@@ -95,7 +95,7 @@ class DummyAgent(CaptureAgent):
         """
 
 
-        #time.sleep(0.06)
+        time.sleep(0.06)
 
         global best_action
         actions = gameState.getLegalActions(self.index)
@@ -131,11 +131,11 @@ class DummyAgent(CaptureAgent):
                     self.closest_enemy_distance = dist
                 self.current_enemy_distances_positions.append((dist, pos))
 
-        pacman_stomach_size = int(self.current_food_amount / 3)
+        pacman_stomach_size = 5
         if self.my_food_distance < 3:
             pacman_stomach_size += 1
 
-        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (not self.is_home and self.current_drop_distance < 6 and self.food_inside > 0):
+        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (self.food_inside > 1 and self.current_drop_distance < 6):
             self.flag_eat_mode = False
         else:
             self.flag_eat_mode = True
@@ -212,7 +212,7 @@ class DummyAgent(CaptureAgent):
 
     def food_depositing(self, my_next_pos):
         value_d = 0
-        shift = 0.15
+        shift = 0.1
         next_d_dist = min([self.getMazeDistance(my_next_pos, drop) for drop in self.drop_positions])
         if next_d_dist < self.current_drop_distance:
             value_d += shift
@@ -269,7 +269,7 @@ class DummyAgent(CaptureAgent):
         value += enemy_positions_value
 
         if not self.is_home and self.recede_home(my_next_position):
-            value -= 0.06
+            value -= 0.05
             if self.closest_enemy_distance < 6:
                 value -= 0.4 / self.closest_enemy_distance
                 if len(successor.getLegalActions(self.index)) == 2:

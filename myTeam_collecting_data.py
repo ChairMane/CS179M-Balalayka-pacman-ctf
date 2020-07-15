@@ -20,6 +20,9 @@ import game
 import math
 import time
 import pandas as pd
+import numpy as np
+import functools
+import operator
 
 
 #################
@@ -93,10 +96,10 @@ class DummyAgent(CaptureAgent):
         self.current_food_positions = []
         self.score = 0
 
-        self.raw_data = self.create_data_grid(gameState)
-        self.data_set_final = []
+        self.data_grid_radius = 5
+        self.features_groups = 10
+        self.qualities = 5
         self.data_set_current = []
-        self.col_names = self.create_columns_names()
 
     def get_indices(self, gameState):
         if self.red:
@@ -104,65 +107,86 @@ class DummyAgent(CaptureAgent):
         else:
             return gameState.getBlueTeamIndices(), gameState.getRedTeamIndices()
 
-    def create_data_grid(self, gameState):
-        result = []
-        for y in range(self.field_height):
-            for x in range(self.field_width):
-                if gameState.hasWall(x, y):
-                    result.append(1)
-                else:
-                    result.append(0)
-        return result
-
-    def data_reverse(self, data):
-        n = len(data)
-        for i in range(n):
-            for j in range(5):
-                if data[i][-1][j] == 1:
-                    data[i][-1][j] = -1
-
-    def update_data(self, gameState, act):
-        result = self.raw_data[:]
-
-        for food in self.current_food_positions:
-            result[food[1] * self.field_width + food[0]] = 2
-        for food in self.enemy_food_positions:
-            result[food[1] * self.field_width + food[0]] = -2
-        if self.red:
-            our_capsules = gameState.getBlueCapsules()
-            enemy_capsules = gameState.getRedCapsules()
-        else:
-            our_capsules = gameState.getRedCapsules()
-            enemy_capsules =gameState.getBlueCapsules()
-        for cap in our_capsules:
-            result[cap[1] * self.field_width + cap[0]] = 4
-        for cap in enemy_capsules:
-            result[cap[1] * self.field_width + cap[0]] = -4
-
+    def create_state_data(self, gameState):
+        x = int(self.my_current_position[0])
+        y = int(self.my_current_position[1])
+        rad = self.data_grid_radius
+        x_0 = x - rad
+        y_0 = y - rad
+        x_1 = x + rad
+        y_1 = y + rad
+        n = self.data_grid_radius * 2 + 1
+        n_sqr = n * n
+        grid_positions = np.zeros([self.features_groups, n_sqr], dtype=int)
+        grid_qualities = np.zeros(self.qualities, dtype=int)
+        for j in range(n):
+            y_current = y_0 + j
+            if y_current < 0:
+                continue
+            if y_current >= self.field_height:
+                break
+            for i in range(n):
+                x_current = x_0 + i
+                if x_current < 0:
+                    continue
+                if x_current >= self.field_width:
+                    break
+                # what inside the grid grid_positions[0]
+                grid_positions[0, j * n + i] = 1
+                # walls grid_positions[1]
+                # print(self.my_current_position)
+                # print('y_current', y_current)
+                # print('x_current', x_current)
+                if gameState.hasWall(x_current, y_current):
+                    grid_positions[1, j * n + i] = 1
+        # food for me grid_positions[2]
+        for pos in self.current_food_positions:
+            (x_t, y_t) = pos
+            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                grid_positions[2, (y_t - y_0) * n + x_t - x_0] = 1
+        # food for enemy grid_positions[3]
+        for pos in self.enemy_food_positions:
+            (x_t, y_t) = pos
+            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                grid_positions[3, (y_t - y_0) * n + x_t - x_0] = 1
+        # power cell for me grid_positions[4]
+        for pos in self.capsules_for_me:
+            (x_t, y_t) = pos
+            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                grid_positions[4, (y_t - y_0) * n + x_t - x_0] = 1
+        # power cell for enemy grid_positions[5]
+        for pos in self.capsules_for_enemy:
+            (x_t, y_t) = pos
+            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                grid_positions[5, (y_t - y_0) * n + x_t - x_0] = 1
+        # friendly agents positions grid_positions[6] (self) and grid_positions[7] (friend)
+        # friendly scary timer grid_qualities[0] (self) and grid_qualities[1] (friend)
         for ind in self.my_indices:
             pos = gameState.getAgentPosition(ind)
-            s_t = gameState.getAgentState(ind).scaredTimer
+            (x_t, y_t) = pos
             if pos == self.my_current_position:
-                a = 8
-                b = 16
+                grid_qualities[0] = gameState.getAgentState(ind).scaredTimer
+                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                    grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
             else:
-                a = 6
-                b = 12
-            if s_t > 0:
-                a -= b + s_t
-            result[pos[1] * self.field_width + pos[0]] = a
-        for ind in self.enemy_indices:
+                grid_qualities[1] = gameState.getAgentState(ind).scaredTimer
+                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                    grid_positions[7, (y_t - y_0) * n + x_t - x_0] = 1
+        # enemy positions grid_positions[8] and grid_positions[9]
+        # enemy scary timer grid_qualities[2] and grid_qualities[3]
+        for i, ind in enumerate(self.enemy_indices):
             pos = gameState.getAgentPosition(ind)
+            grid_qualities[2 + i] = gameState.getAgentState(ind).scaredTimer
             if pos:
-                s_t = gameState.getAgentState(ind).scaredTimer
-                a = -6
-                if s_t > 0:
-                    a += 12 + s_t
-                result[pos[1] * self.field_width + pos[0]] = a
+                (x_t, y_t) = pos
+                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                    grid_positions[8 + i, (y_t - y_0) * n + x_t - x_0] = 1
+        # food inside
+        grid_qualities[4] = self.food_inside
+        return np.concatenate((grid_positions.ravel(), grid_qualities))
 
-        result.append(self.food_inside)
-
-        move = [0] * 5
+    def add_move(self, act):
+        move = np.zeros(5, dtype=int)
         def stop():
             move[0] = 1
         def north():
@@ -181,14 +205,7 @@ class DummyAgent(CaptureAgent):
             'West': west
         }
         switcher[act]()
-        result.append(move)
-
-        return result
-
-    def create_columns_names(self):
-        result = list(range(self.field_width * self.field_height))
-        result.append('food_inside')
-        return result
+        return move
 
     def chooseAction(self, gameState):
         """
@@ -202,10 +219,9 @@ class DummyAgent(CaptureAgent):
 
             score_change = new_score - self.score
             self.score = new_score
-            if score_change < 0:
-                self.data_reverse(self.data_set_current)
-            df = pd.DataFrame(self.data_set_current)
-            df.to_csv('my_data.csv', mode = 'a', header = False, index = False)
+            if score_change > 0:
+                df = pd.DataFrame(self.data_set_current)
+                df.to_csv('my_data.csv', mode = 'a', header = False, index = False)
             del self.data_set_current[:]
 
         # end data collection
@@ -225,12 +241,18 @@ class DummyAgent(CaptureAgent):
 
         blue_food = gameState.getBlueFood().asList()
         red_food = gameState.getRedFood().asList()
+        blue_capsules = gameState.getBlueCapsules()
+        red_capsules = gameState.getRedCapsules()
         if self.red:
             self.current_food_positions = blue_food
             self.enemy_food_positions = red_food
+            self.capsules_for_me = blue_capsules
+            self.capsules_for_enemy = red_capsules
         else:
             self.current_food_positions = red_food
             self.enemy_food_positions = blue_food
+            self.capsules_for_me = red_capsules
+            self.capsules_for_enemy = blue_capsules
 
         self.current_food_positions.sort(key = lambda x: x[1])
         self.current_food_amount = len(self.current_food_positions)
@@ -251,11 +273,11 @@ class DummyAgent(CaptureAgent):
                     self.closest_enemy_distance = dist
                 self.current_enemy_distances_positions.append((dist, pos))
 
-        pacman_stomach_size = int(self.current_food_amount / 3)
+        pacman_stomach_size = 5
         if self.my_food_distance < 3:
             pacman_stomach_size += 1
 
-        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (not self.is_home and self.current_drop_distance < 6 and self.food_inside > 0):
+        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (not self.is_home and self.current_drop_distance < 6 and self.food_inside > 1):
             self.flag_eat_mode = False
         else:
             self.flag_eat_mode = True
@@ -276,7 +298,9 @@ class DummyAgent(CaptureAgent):
         if flag_food_eaten:
             self.food_inside += 1
 
-        self.data_set_current.append(self.update_data(gameState, best_action))
+        state_data = self.create_state_data(gameState)
+
+        self.data_set_current.append(np.concatenate((state_data, self.add_move(best_action))))
 
         return best_action
 

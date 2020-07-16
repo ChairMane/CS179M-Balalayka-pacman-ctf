@@ -97,7 +97,7 @@ class DummyAgent(CaptureAgent):
         self.score = 0
 
         self.data_grid_radius = 5
-        self.features_groups = 10
+        self.features_groups = 9
         self.qualities = 7
         self.data_set_current = []
 
@@ -156,20 +156,18 @@ class DummyAgent(CaptureAgent):
             (x_t, y_t) = pos
             if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
                 grid_positions[5, (y_t - y_0) * n + x_t - x_0] = 1
-        # friendly agents positions grid_positions[6] (self) and grid_positions[7] (friend)
+        # friendly agent position grid_positions[6]
         # friendly scary timer grid_qualities[0] (self) and grid_qualities[1] (friend)
         for ind in self.my_indices:
             pos = gameState.getAgentPosition(ind)
             (x_t, y_t) = pos
             if pos == self.my_current_position:
                 grid_qualities[0] = gameState.getAgentState(ind).scaredTimer
-                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
-                    grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
             else:
                 grid_qualities[1] = gameState.getAgentState(ind).scaredTimer
                 if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
-                    grid_positions[7, (y_t - y_0) * n + x_t - x_0] = 1
-        # enemy positions grid_positions[8] and grid_positions[9]
+                    grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
+        # enemy positions grid_positions[7] and grid_positions[8]
         # enemy scary timer grid_qualities[2] and grid_qualities[3]
         for i, ind in enumerate(self.enemy_indices):
             pos = gameState.getAgentPosition(ind)
@@ -177,7 +175,7 @@ class DummyAgent(CaptureAgent):
             if pos:
                 (x_t, y_t) = pos
                 if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
-                    grid_positions[8 + i, (y_t - y_0) * n + x_t - x_0] = 1
+                    grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
         # food inside
         grid_qualities[4] = self.food_inside
         # relative x of the agent

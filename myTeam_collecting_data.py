@@ -98,7 +98,7 @@ class DummyAgent(CaptureAgent):
 
         self.data_grid_radius = 5
         self.features_groups = 9
-        self.qualities = 7
+        self.qualities = 9
         self.data_set_current = []
 
     def get_indices(self, gameState):
@@ -163,8 +163,16 @@ class DummyAgent(CaptureAgent):
             (x_t, y_t) = pos
             if pos == self.my_current_position:
                 grid_qualities[0] = gameState.getAgentState(ind).scaredTimer
+                # relative x of the agent
+                grid_qualities[5] = (x_t - self.field_mid_width) / self.field_width
+                # relative y of the agent
+                grid_qualities[6] = (y_t - self.field_mid_height) / self.field_height
             else:
                 grid_qualities[1] = gameState.getAgentState(ind).scaredTimer
+                # relative x of the friendly agent
+                grid_qualities[7] = (x_t - self.field_mid_width) / self.field_width
+                # relative y of the friendly agent
+                grid_qualities[8] = (y_t - self.field_mid_height) / self.field_height
                 if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
                     grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
         # enemy positions grid_positions[7] and grid_positions[8]
@@ -178,10 +186,6 @@ class DummyAgent(CaptureAgent):
                     grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
         # food inside
         grid_qualities[4] = self.food_inside
-        # relative x of the agent
-        grid_qualities[5] = (x - self.field_mid_width) / self.field_width
-        # relative y of the agent
-        grid_qualities[6] = (y - self.field_mid_height) / self.field_height
 
         return np.concatenate((grid_positions.ravel(), grid_qualities))
 

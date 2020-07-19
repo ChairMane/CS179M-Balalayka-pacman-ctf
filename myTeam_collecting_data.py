@@ -280,7 +280,7 @@ class DummyAgent(CaptureAgent):
         if self.my_food_distance < 3:
             pacman_stomach_size += 1
 
-        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (not self.is_home and self.current_drop_distance < 6 and self.food_inside > 1):
+        if self.current_food_amount < 3 or self.food_inside > pacman_stomach_size or (self.food_inside > 1 and self.current_drop_distance < 6):
             self.flag_eat_mode = False
         else:
             self.flag_eat_mode = True
@@ -361,7 +361,7 @@ class DummyAgent(CaptureAgent):
 
     def food_depositing(self, my_next_pos):
         value_d = 0
-        shift = 0.15
+        shift = 0.1
         next_d_dist = min([self.getMazeDistance(my_next_pos, drop) for drop in self.drop_positions])
         if next_d_dist < self.current_drop_distance:
             value_d += shift
@@ -413,7 +413,7 @@ class DummyAgent(CaptureAgent):
                             else:
                                 enemy_positions_value -= enemy_position_change
                 else:
-                    enemy_positions_value += enemy_position_change
+                    enemy_positions_value += enemy_position_change * 2
 
         value += enemy_positions_value
 

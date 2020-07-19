@@ -108,6 +108,12 @@ class DummyAgent(CaptureAgent):
             return gameState.getBlueTeamIndices(), gameState.getRedTeamIndices()
 
     def create_state_data(self, gameState):
+        base_field = np.zeros([self.field_height, self.field_width])
+        for j in range(self.field_height):
+            for i in range(self.field_width):
+                if gameState.hasWall(i, j):
+                    base_field[j,i] = 1
+
         x = int(self.my_current_position[0])
         y = int(self.my_current_position[1])
         rad = self.data_grid_radius
@@ -187,7 +193,7 @@ class DummyAgent(CaptureAgent):
         # food inside
         grid_qualities[4] = self.food_inside
 
-        return np.concatenate((grid_positions.ravel(), grid_qualities))
+        return np.concatenate((base_field.ravel(), grid_positions.ravel(), grid_qualities))
 
     def add_move(self, act):
         move = np.zeros(5, dtype=int)
@@ -218,15 +224,8 @@ class DummyAgent(CaptureAgent):
         #time.sleep(0.06)
 
         # machine learning data collection
-        new_score = gameState.data.score
-        if new_score != self.score:
 
-            score_change = new_score - self.score
-            self.score = new_score
-            if score_change > 0:
-                df = pd.DataFrame(self.data_set_current)
-                df.to_csv('my_data_collect.csv', mode = 'a', header = False, index = False)
-            del self.data_set_current[:]
+        self.collecting_data(gameState)
 
         # end data collection
 
@@ -427,12 +426,35 @@ class DummyAgent(CaptureAgent):
 
         return value, flag_food_taken
 
+    def collecting_data(self, gameState):
+        return None
+
 class Agent_North(DummyAgent):
     def get_my_food_positions(self):
         n = int(self.current_food_amount / 2)
         return self.current_food_positions[n:]
 
+    def collecting_data(self, gameState):
+        new_score = gameState.data.score
+        if new_score != self.score:
+            score_change = new_score - self.score
+            self.score = new_score
+            if score_change > 0:
+                df = pd.DataFrame(self.data_set_current)
+                df.to_csv('my_data_North.csv', mode='a', header=False, index=False)
+            del self.data_set_current[:]
+
 class Agent_South(DummyAgent):
     def get_my_food_positions(self):
         n = int((self.current_food_amount + 1) / 2)
         return self.current_food_positions[:n]
+
+    def collecting_data(self, gameState):
+        new_score = gameState.data.score
+        if new_score != self.score:
+            score_change = new_score - self.score
+            self.score = new_score
+            if score_change > 0:
+                df = pd.DataFrame(self.data_set_current)
+                df.to_csv('my_data_South.csv', mode='a', header=False, index=False)
+            del self.data_set_current[:]

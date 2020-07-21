@@ -264,7 +264,7 @@ class DummyAgent(CaptureAgent):
                             else:
                                 enemy_positions_value -= enemy_position_change
                 else:
-                    enemy_positions_value += enemy_position_change
+                    enemy_positions_value += enemy_position_change * 2
 
         value += enemy_positions_value
 

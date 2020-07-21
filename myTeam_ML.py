@@ -250,7 +250,14 @@ class DummyAgent(CaptureAgent):
             best_action = action_dictionary[index]
             if best_action in actions:
                 return best_action
-
+    def moves_to_act_prob(self, moves, actions):
+        keys = ['Stop', 'North', 'East', 'South', 'West']
+        m = moves / moves.sum()
+        for i in range(5):
+            act = np.random.choice(keys, 1, p=m)[0]
+            if act in actions:
+                return act
+        return 'Stop'
 
     def food_eaten_flag(self, gameState, best_action):
         flag = False
@@ -312,7 +319,7 @@ class DummyAgent(CaptureAgent):
         #moves = self.create_moves(self.wh, self.bh, self.wo, self.bo, features)
         moves = self.my_model.predict_proba([features])[0]
         actions = gameState.getLegalActions(self.index)
-        best_action = self.moves_to_act(moves, actions)
+        best_action = self.moves_to_act_prob(moves, actions)
 
         flag_food_eaten = self.food_eaten_flag(gameState, best_action)
 

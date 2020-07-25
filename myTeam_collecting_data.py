@@ -18,7 +18,6 @@ from game import Directions
 from game import Grid
 import game
 import math
-import time
 import pandas as pd
 import numpy as np
 import functools
@@ -91,15 +90,21 @@ class DummyAgent(CaptureAgent):
         self.field_mid_height = int((self.field_height - 2) / 2)
         self.my_indices, self.enemy_indices = self.get_indices(gameState)
         self.food_inside = 0
+        self.food_inside_prev = 0
         self.flag_eat_mode = True
         self.drop_positions = self.get_drop_positions(gameState)
         self.current_food_positions = []
-        self.score = 0
+        self.flag_food_eaten = False
+        self.flag_food_eaten_prev = False
+        self.flag_death = False
 
         self.data_grid_radius = 5
         self.features_groups = 9
         self.qualities = 9
         self.data_set_current = []
+        self.data_value = np.empty(0)
+        self.prev_state_value = 0
+        self.flag_win = False
 
     def get_indices(self, gameState):
         if self.red:
@@ -217,24 +222,102 @@ class DummyAgent(CaptureAgent):
         switcher[act]()
         return move
 
+    def all_food_positions(self, gameState):
+        blue_food = gameState.getBlueFood().asList()
+        red_food = gameState.getRedFood().asList()
+        blue_capsules = gameState.getBlueCapsules()
+        red_capsules = gameState.getRedCapsules()
+        if self.red:
+            current_food_positions = blue_food
+            enemy_food_positions = red_food
+            capsules_for_me = blue_capsules
+            capsules_for_enemy = red_capsules
+        else:
+            current_food_positions = red_food
+            enemy_food_positions = blue_food
+            capsules_for_me = red_capsules
+            capsules_for_enemy = blue_capsules
+        return current_food_positions, enemy_food_positions, capsules_for_me, capsules_for_enemy
+
+    def state_action_value(self, gameState):
+        s_value = 0
+        s_value += 1500 / (0.15 * self.my_food_distance + 7)**3
+        s_value -= -3 * math.tanh(0.2 * self.getMazeDistance(self.my_current_position, (1, 1)) - 1.2) + 3
+        if self.food_inside > 0:
+            s_value += -3 * math.tanh(0.5 * self.current_drop_distance / self.food_inside - 1) + 3
+
+        enemy_dist_value = 0
+        for ind in self.enemy_indices:
+            pos = gameState.getAgentPosition(ind)
+            if pos:
+                if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
+                    continue
+                distance_value = -3 * math.tanh(0.13 * self.getMazeDistance(self.my_current_position, pos) - 0.8) + 3
+                enemy_is_home = self.at_home(pos, 0)
+                if gameState.getAgentState(self.index).scaredTimer > 0:
+                    enemy_dist_value -= distance_value
+                else:
+                    if enemy_is_home:
+                        if self.is_home:
+                            enemy_dist_value += distance_value
+                        else:
+                            enemy_dist_value += distance_value
+                    else:
+                        if self.is_home:
+                            enemy_dist_value += distance_value
+                        else:
+                            enemy_dist_value -= distance_value
+        s_value += enemy_dist_value
+
+        return s_value
+
+    def food_eaten_flag(self, gameState, best_action):
+        flag = False
+        successor = self.getSuccessor(gameState, best_action)
+        if self.red:
+            food = successor.getBlueFood().asList()
+        else:
+            food = successor.getRedFood().asList()
+        if self.current_food_amount == len(food) + 1:
+            flag = True
+        return flag
+
+    def q_func(self):
+        n = len(self.data_value)
+        if n > 0:
+            reward = np.logspace(1, 5, num=6, base=3) / 100
+            if self.flag_death:
+                if n >= 6:
+                    self.data_value[-6:] -= reward * 3
+                else:
+                    self.data_value -= reward[-n:] * 3
+            else:
+                if (self.food_inside == 0 and self.food_inside_prev > 2) or self.flag_win:
+                    if n >= 6:
+                        self.data_value[-6:] += reward
+                    else:
+                        self.data_value += reward[-n:]
+                if self.flag_food_eaten_prev:
+                    if n >= 6:
+                        self.data_value[-6:] += reward
+                    else:
+                        self.data_value += reward[-n:]
+            if n > 1:
+                self.data_value[-2] += 0.6 * (self.data_value[-1] - self.data_value[-2])
+            # How to check enemy's death????
+
     def chooseAction(self, gameState):
         """
         Picks among actions randomly.
         """
         #time.sleep(0.06)
 
-        # machine learning data collection
-
-        self.collecting_data(gameState)
-
-        # end data collection
-
-        global best_action
         actions = gameState.getLegalActions(self.index)
         '''
         You should change this in your own agent.
         '''
 
+        self.food_inside_prev = self.food_inside
         self.my_current_position = gameState.getAgentState(self.index).getPosition()
         self.is_home = self.at_home(self.my_current_position, 0)
         if self.is_home:
@@ -286,24 +369,39 @@ class DummyAgent(CaptureAgent):
             self.flag_eat_mode = True
 
         action_value = -10
-        flag_food_eaten = False
-        for action in actions:
-            if action == 'Stop':
-                new_action_value = -0.3
-                tempo_flag = False
-            else:
-                new_action_value, tempo_flag = self.action_value(gameState, action)
-            if new_action_value > action_value:
-                best_action = action
-                action_value = new_action_value
-                flag_food_eaten = tempo_flag
+        best_action = 'Stop'
+        if random.random() > 0.7:
+            while best_action == 'Stop':
+                best_action = random.choice(actions)
+        else:
+            for action in actions:
+                if action == 'Stop':
+                    new_action_value = -0.3
+                else:
+                    new_action_value = self.action_value(gameState, action)
 
-        if flag_food_eaten:
+                if new_action_value > action_value:
+                    best_action = action
+                    action_value = new_action_value
+
+        self.flag_food_eaten = self.food_eaten_flag(gameState, best_action)
+        if self.flag_food_eaten:
             self.food_inside += 1
+
+        self.flag_death = False
+        if self.my_current_position == (1, 1):
+            self.flag_death = True
+
 
         state_data = self.create_state_data(gameState)
 
         self.data_set_current.append(np.concatenate((state_data, self.add_move(best_action))))
+
+
+        self.q_func()
+        self.data_value = np.concatenate((self.data_value, [self.state_action_value(gameState)]))
+
+        self.flag_food_eaten_prev = self.flag_food_eaten
 
         return best_action
 
@@ -332,9 +430,6 @@ class DummyAgent(CaptureAgent):
     def enemy_distance_value(self, dist_current, dist_next):
         return math.log2((dist_next + 1) / (dist_current + 1))
 
-    def object_distance_value(self, dist_current, dist_next):
-        return 0.003 * (dist_next**3 - dist_current**3)
-
     def get_drop_positions(self, gameState):
         positions = []
         x = self.field_mid_width
@@ -349,15 +444,12 @@ class DummyAgent(CaptureAgent):
     def food_hunting(self, my_next_pos):
         value_h = 0
         shift = 0.1
-        flag_h = False
         next_f_dist = min([self.getMazeDistance(my_next_pos, food) for food in self.my_food_positions])
         if next_f_dist < self.my_food_distance:
             value_h += shift
-            if next_f_dist == 0:
-                flag_h = True
         elif next_f_dist > self.my_food_distance:
             value_h -= shift
-        return value_h, flag_h
+        return value_h
 
     def food_depositing(self, my_next_pos):
         value_d = 0
@@ -379,12 +471,10 @@ class DummyAgent(CaptureAgent):
         successor = self.getSuccessor(gameState, action)
         value = 0
 
-        flag_food_taken = False
-
         my_next_position = successor.getAgentState(self.index).getPosition()
         next_is_home = self.at_home(my_next_position, 0)
         if self.flag_eat_mode:
-            hunting_value, flag_food_taken = self.food_hunting(my_next_position)
+            hunting_value = self.food_hunting(my_next_position)
             value += hunting_value
         elif self.food_inside > 0:
             value += self.food_depositing(my_next_position)
@@ -424,37 +514,30 @@ class DummyAgent(CaptureAgent):
                 if len(successor.getLegalActions(self.index)) == 2:
                     value -= 0.2
 
-        return value, flag_food_taken
+        return value
 
-    def collecting_data(self, gameState):
-        return None
 
 class Agent_North(DummyAgent):
     def get_my_food_positions(self):
         n = int(self.current_food_amount / 2)
         return self.current_food_positions[n:]
 
-    def collecting_data(self, gameState):
-        new_score = gameState.data.score
-        if new_score != self.score:
-            score_change = new_score - self.score
-            self.score = new_score
-            if score_change > 0:
-                df = pd.DataFrame(self.data_set_current)
-                df.to_csv('my_data_North.csv', mode='a', header=False, index=False)
-            del self.data_set_current[:]
+    def final(self, gameState):
+        if gameState.data.score > 0:
+            self.flag_win = True
+            self.q_func()
+            df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.data_value)))
+            df.to_csv('my_data_North.csv', mode='a', header=False, index=False)
+
 
 class Agent_South(DummyAgent):
     def get_my_food_positions(self):
         n = int((self.current_food_amount + 1) / 2)
         return self.current_food_positions[:n]
 
-    def collecting_data(self, gameState):
-        new_score = gameState.data.score
-        if new_score != self.score:
-            score_change = new_score - self.score
-            self.score = new_score
-            if score_change > 0:
-                df = pd.DataFrame(self.data_set_current)
-                df.to_csv('my_data_South.csv', mode='a', header=False, index=False)
-            del self.data_set_current[:]
+    def final(self, gameState):
+        if gameState.data.score > 0:
+            self.flag_win = True
+            self.q_func()
+            df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.data_value)))
+            df.to_csv('my_data_South.csv', mode='a', header=False, index=False)

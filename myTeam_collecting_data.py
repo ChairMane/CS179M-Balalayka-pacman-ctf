@@ -150,22 +150,22 @@ class DummyAgent(CaptureAgent):
         # food for me grid_positions[2]
         for pos in self.current_food_positions:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[2, (y_t - y_0) * n + x_t - x_0] = 1
         # food for enemy grid_positions[3]
         for pos in self.enemy_food_positions:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[3, (y_t - y_0) * n + x_t - x_0] = 1
         # power cell for me grid_positions[4]
         for pos in self.capsules_for_me:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[4, (y_t - y_0) * n + x_t - x_0] = 1
         # power cell for enemy grid_positions[5]
         for pos in self.capsules_for_enemy:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[5, (y_t - y_0) * n + x_t - x_0] = 1
         # friendly agent position grid_positions[6]
         # friendly scary timer grid_qualities[0] (self) and grid_qualities[1] (friend)
@@ -184,7 +184,7 @@ class DummyAgent(CaptureAgent):
                 grid_qualities[7] = (x_t - self.field_mid_width) / self.field_width
                 # relative y of the friendly agent
                 grid_qualities[8] = (y_t - self.field_mid_height) / self.field_height
-                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                     grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
         # enemy positions grid_positions[7] and grid_positions[8]
         # enemy scary timer grid_qualities[2] and grid_qualities[3]
@@ -193,7 +193,7 @@ class DummyAgent(CaptureAgent):
             grid_qualities[2 + i] = gameState.getAgentState(ind).scaredTimer
             if pos:
                 (x_t, y_t) = pos
-                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                     grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
         # food inside
         grid_qualities[4] = self.food_inside

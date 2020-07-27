@@ -23,9 +23,17 @@ import pandas as pd
 import numpy as np
 import functools
 import operator
-from sklearn.neural_network import MLPRegressor
+
+#from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 import joblib
+
+import keras
+from keras import models
+#from keras.callbacks import EarlyStopping
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasRegressor
 
 
 #################
@@ -122,7 +130,7 @@ class DummyAgent(CaptureAgent):
         for j in range(self.field_height):
             for i in range(self.field_width):
                 if gameState.hasWall(i, j):
-                    base_field[j, i] = 1
+                    base_field[j,i] = 1
 
         x = int(self.my_current_position[0])
         y = int(self.my_current_position[1])
@@ -155,22 +163,22 @@ class DummyAgent(CaptureAgent):
         # food for me grid_positions[2]
         for pos in self.current_food_positions:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[2, (y_t - y_0) * n + x_t - x_0] = 1
         # food for enemy grid_positions[3]
         for pos in self.enemy_food_positions:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[3, (y_t - y_0) * n + x_t - x_0] = 1
         # power cell for me grid_positions[4]
         for pos in self.capsules_for_me:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[4, (y_t - y_0) * n + x_t - x_0] = 1
         # power cell for enemy grid_positions[5]
         for pos in self.capsules_for_enemy:
             (x_t, y_t) = pos
-            if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                 grid_positions[5, (y_t - y_0) * n + x_t - x_0] = 1
         # friendly agent position grid_positions[6]
         # friendly scary timer grid_qualities[0] (self) and grid_qualities[1] (friend)
@@ -189,7 +197,7 @@ class DummyAgent(CaptureAgent):
                 grid_qualities[7] = (x_t - self.field_mid_width) / self.field_width
                 # relative y of the friendly agent
                 grid_qualities[8] = (y_t - self.field_mid_height) / self.field_height
-                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                     grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
         # enemy positions grid_positions[7] and grid_positions[8]
         # enemy scary timer grid_qualities[2] and grid_qualities[3]
@@ -198,7 +206,7 @@ class DummyAgent(CaptureAgent):
             grid_qualities[2 + i] = gameState.getAgentState(ind).scaredTimer
             if pos:
                 (x_t, y_t) = pos
-                if x_t >= x_0 and x_t <= x_1 and y_t >= y_0 and y_t <= y_1:
+                if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                     grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
         # food inside
         grid_qualities[4] = self.food_inside
@@ -207,22 +215,16 @@ class DummyAgent(CaptureAgent):
 
     def add_move(self, act):
         move = np.zeros(5, dtype=int)
-
         def stop():
             move[0] = 1
-
         def north():
             move[1] = 1
-
         def east():
             move[2] = 1
-
         def south():
             move[3] = 1
-
         def west():
             move[4] = 1
-
         switcher = {
             'Stop': stop,
             'North': north,
@@ -250,6 +252,38 @@ class DummyAgent(CaptureAgent):
             capsules_for_enemy = blue_capsules
         return current_food_positions, enemy_food_positions, capsules_for_me, capsules_for_enemy
 
+    def state_action_value(self, gameState):
+        s_value = 0
+        s_value += 1500 / (0.15 * self.my_food_distance + 7)**3
+        s_value -= -3 * math.tanh(0.2 * self.getMazeDistance(self.my_current_position, (1, 1)) - 1.2) + 3
+        if self.food_inside > 0:
+            s_value += -3 * math.tanh(0.5 * self.current_drop_distance / self.food_inside - 1) + 3
+
+        enemy_dist_value = 0
+        for ind in self.enemy_indices:
+            pos = gameState.getAgentPosition(ind)
+            if pos:
+                if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
+                    continue
+                distance_value = -3 * math.tanh(0.13 * self.getMazeDistance(self.my_current_position, pos) - 0.8) + 3
+                enemy_is_home = self.at_home(pos, 0)
+                if gameState.getAgentState(self.index).scaredTimer > 0:
+                    enemy_dist_value -= distance_value
+                else:
+                    if enemy_is_home:
+                        if self.is_home:
+                            enemy_dist_value += distance_value
+                        else:
+                            enemy_dist_value += distance_value
+                    else:
+                        if self.is_home:
+                            enemy_dist_value += distance_value
+                        else:
+                            enemy_dist_value -= distance_value
+        s_value += enemy_dist_value
+
+        return s_value
+
     def food_eaten_flag(self, gameState, best_action):
         flag = False
         successor = self.getSuccessor(gameState, best_action)
@@ -260,38 +294,6 @@ class DummyAgent(CaptureAgent):
         if self.current_food_amount == len(food) + 1:
             flag = True
         return flag
-
-    def state_action_value(self, gameState):
-        s_value = 0
-        s_value += 10 / (self.my_food_distance + 4)
-
-        if self.food_inside > 5:
-            s_value += 10 / (self.current_drop_distance + 2)
-
-        enemy_dist_value = 0
-        for index in self.enemy_indices:
-            pos = gameState.getAgentPosition(index)
-            if pos:
-                if gameState.getAgentState(index).scaredTimer > 3 and not self.at_home(pos, 0):
-                    continue
-                distance_value = 10 / (self.getMazeDistance(self.my_current_position, pos) + 1)
-                enemy_is_home = self.at_home(pos, 0)
-                if gameState.getAgentState(self.index).scaredTimer > 0:
-                    enemy_dist_value -= distance_value * 2
-                else:
-                    if enemy_is_home:
-                        if self.is_home:
-                            enemy_dist_value += distance_value * 2
-                        else:
-                            enemy_dist_value += distance_value
-                    else:
-                        if self.is_home:
-                            enemy_dist_value += distance_value
-                        else:
-                            enemy_dist_value -= distance_value * 2
-        s_value += enemy_dist_value
-
-        return s_value
 
     def q_func(self):
         n = len(self.data_value)
@@ -313,7 +315,8 @@ class DummyAgent(CaptureAgent):
                         self.data_value[-6:] += reward
                     else:
                         self.data_value += reward[-n:]
-
+            if n > 1:
+                self.data_value[-2] += 0.6 * (self.data_value[-1] - self.data_value[-2])
             # How to check enemy's death????
 
     def read_model_scaler(self):
@@ -351,13 +354,13 @@ class DummyAgent(CaptureAgent):
 
         actions = gameState.getLegalActions(self.index)
         action_value = -10
-        if random.random() > 0.7:
+        if random.random() > 1:
             best_action = random.choice(actions)
         else:
             for act in actions:
                 features = np.concatenate((state_data, self.add_move(act)))
-                #features = self.my_scaler.transform([features])
-                value = self.my_model.predict([features])[0]
+                features = self.my_scaler.transform([features])
+                value = self.my_model.predict(features)
                 if value > action_value:
                     best_action = act
                     action_value = value
@@ -409,7 +412,7 @@ class Agent_North(DummyAgent):
         return self.current_food_positions[n:]
 
     def read_model_scaler(self):
-        return joblib.load('model_North.sav'), joblib.load('scaler_North.sav')
+        return models.load_model('model_North.hdf5'), joblib.load('scaler_North.sav')
 
 
 class Agent_South(DummyAgent):
@@ -418,4 +421,4 @@ class Agent_South(DummyAgent):
         return self.current_food_positions[:n]
 
     def read_model_scaler(self):
-        return joblib.load('model_South.sav'), joblib.load('scaler_South.sav')
+        return models.load_model('model_South.hdf5'), joblib.load('scaler_South.sav')

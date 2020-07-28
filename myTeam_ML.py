@@ -354,12 +354,12 @@ class DummyAgent(CaptureAgent):
 
         actions = gameState.getLegalActions(self.index)
         action_value = -10
-        if random.random() > 1:
+        if random.random() > 0.7:
             best_action = random.choice(actions)
         else:
             for act in actions:
                 features = np.concatenate((state_data, self.add_move(act)))
-                features = self.my_scaler.transform([features])
+                features = self.my_scaler.transform(features.reshape(1, -1))
                 value = self.my_model.predict(features)
                 if value > action_value:
                     best_action = act

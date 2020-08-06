@@ -104,34 +104,68 @@ class DummyAgent(CaptureAgent):
         self.food_inside = 0
         self.food_inside_prev = 0
         self.drop_positions = self.get_drop_positions(gameState)
-        self.current_food_positions = []
-        self.flag_food_eaten = False
-        self.flag_food_eaten_prev = False
-        self.flag_death = False
+        self.flag_food_eaten = False # if pellet consumed by agent
+        self.flag_food_eaten_prev = False # if pellet consumed in previous step
+        self.flag_death = False # if agent got eaten
 
         self.data_grid_radius = 5
         self.features_groups = 9
-        self.qualities = 9
+        self.qualities = 13
         self.data_set_current = []
-        self.data_value = np.empty(0)
-        self.prev_state_value = 0
-        self.flag_win = False
+
+        self.epsilon = 0.8 # exploration rate
+        self.gamma = 0.985 # gamma for discounted reward
+        self.penalty = 0.1 # penalty for each turn
+
+        self.rewards_values = np.empty(0) # reward for each step
+        self.flag_win = False # if game won
+        self.flag_lose = False # if game lost
 
         self.my_model, self.my_scaler = self.read_model_scaler()
 
+    # return 2 arrays of our indices and enemy indices
     def get_indices(self, gameState):
         if self.red:
             return gameState.getRedTeamIndices(), gameState.getBlueTeamIndices()
         else:
             return gameState.getBlueTeamIndices(), gameState.getRedTeamIndices()
 
-    def create_state_data(self, gameState):
-        base_field = np.zeros([self.field_height, self.field_width])
-        for j in range(self.field_height):
-            for i in range(self.field_width):
-                if gameState.hasWall(i, j):
-                    base_field[j,i] = 1
+    # transform string action to the integer index
+    def action_to_index(self, act):
+        def stop():
+            return 0
+        def north():
+            return 1
+        def east():
+            return 2
+        def south():
+            return 3
+        def west():
+            return 4
+        switcher = {
+            'Stop': stop,
+            'North': north,
+            'East': east,
+            'South': south,
+            'West': west
+        }
+        return switcher[act]()
 
+    # features space of games state
+    def create_state_data_v1(self, gameState):
+        # food, drop predicted
+        food_future_dist = np.full(5, 10 / (self.my_food_distance + 1))
+        drop_future_dist = np.full(5, 10 / (self.current_drop_distance + 1))
+        for action in self.actions:
+            successor = self.getSuccessor(gameState, action)
+            new_pos = successor.getAgentState(self.index).getPosition()
+            i = self.action_to_index(action)
+            food_dist = min([self.getMazeDistance(new_pos, food) for food in self.my_food_positions])
+            drop_dist = min([self.getMazeDistance(new_pos, drop) for drop in self.drop_positions])
+            food_future_dist[i] = 10 / (food_dist + 1)
+            drop_future_dist[i] = 10 / (drop_dist + 1)
+
+        # data in square around agent of radius self.data_grid_radius
         x = int(self.my_current_position[0])
         y = int(self.my_current_position[1])
         rad = self.data_grid_radius
@@ -201,18 +235,33 @@ class DummyAgent(CaptureAgent):
                     grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
         # enemy positions grid_positions[7] and grid_positions[8]
         # enemy scary timer grid_qualities[2] and grid_qualities[3]
+        enemy_future_dist = np.zeros((2, 5))
         for i, ind in enumerate(self.enemy_indices):
             pos = gameState.getAgentPosition(ind)
             grid_qualities[2 + i] = gameState.getAgentState(ind).scaredTimer
             if pos:
+                if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
+                    continue
+                dist = 10 / (self.getMazeDistance(self.my_current_position, pos) + 1)
+                grid_qualities[9 + i] = dist
                 (x_t, y_t) = pos
                 if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                     grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
+                enemy_future_dist[i] = dist
+                for action in self.actions:
+                    successor = self.getSuccessor(gameState, action)
+                    new_pos = successor.getAgentState(self.index).getPosition()
+                    enemy_future_dist[i, self.action_to_index(action)] = 10 / (self.getMazeDistance(new_pos, pos) + 1)
         # food inside
         grid_qualities[4] = self.food_inside
+        # amount of food for us
+        grid_qualities[11] = len(self.current_food_positions)
+        # amount of food for enemy
+        grid_qualities[12] = len(self.enemy_food_positions)
 
-        return np.concatenate((base_field.ravel(), grid_positions.ravel(), grid_qualities))
+        return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_positions.ravel(), grid_qualities))
 
+    # return array like [0, 1, 0, 0, 0] where 1 indicate which action was taken
     def add_move(self, act):
         move = np.zeros(5, dtype=int)
         def stop():
@@ -235,6 +284,7 @@ class DummyAgent(CaptureAgent):
         switcher[act]()
         return move
 
+    # return arrays of positions of our food, enemy food, our capsules, enemy capsules
     def all_food_positions(self, gameState):
         blue_food = gameState.getBlueFood().asList()
         red_food = gameState.getRedFood().asList()
@@ -252,38 +302,7 @@ class DummyAgent(CaptureAgent):
             capsules_for_enemy = blue_capsules
         return current_food_positions, enemy_food_positions, capsules_for_me, capsules_for_enemy
 
-    def state_action_value(self, gameState):
-        s_value = 0
-        s_value += 1500 / (0.15 * self.my_food_distance + 7)**3
-        s_value -= -3 * math.tanh(0.2 * self.getMazeDistance(self.my_current_position, (1, 1)) - 1.2) + 3
-        if self.food_inside > 0:
-            s_value += -3 * math.tanh(0.5 * self.current_drop_distance / self.food_inside - 1) + 3
-
-        enemy_dist_value = 0
-        for ind in self.enemy_indices:
-            pos = gameState.getAgentPosition(ind)
-            if pos:
-                if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
-                    continue
-                distance_value = -3 * math.tanh(0.13 * self.getMazeDistance(self.my_current_position, pos) - 0.8) + 3
-                enemy_is_home = self.at_home(pos, 0)
-                if gameState.getAgentState(self.index).scaredTimer > 0:
-                    enemy_dist_value -= distance_value
-                else:
-                    if enemy_is_home:
-                        if self.is_home:
-                            enemy_dist_value += distance_value
-                        else:
-                            enemy_dist_value += distance_value
-                    else:
-                        if self.is_home:
-                            enemy_dist_value += distance_value
-                        else:
-                            enemy_dist_value -= distance_value
-        s_value += enemy_dist_value
-
-        return s_value
-
+    # if action results in eating pellet
     def food_eaten_flag(self, gameState, best_action):
         flag = False
         successor = self.getSuccessor(gameState, best_action)
@@ -295,32 +314,35 @@ class DummyAgent(CaptureAgent):
             flag = True
         return flag
 
-    def q_func(self):
-        n = len(self.data_value)
-        if n > 0:
-            reward = np.logspace(1, 5, num=6, base=3) / 100
-            if self.flag_death:
-                if n >= 6:
-                    self.data_value[-6:] -= reward * 3
-                else:
-                    self.data_value -= reward[-n:] * 3
-            else:
-                if (self.food_inside == 0 and self.food_inside_prev > 2) or self.flag_win:
-                    if n >= 6:
-                        self.data_value[-6:] += reward
-                    else:
-                        self.data_value += reward[-n:]
-                if self.flag_food_eaten_prev:
-                    if n >= 6:
-                        self.data_value[-6:] += reward
-                    else:
-                        self.data_value += reward[-n:]
-            if n > 1:
-                self.data_value[-2] += 0.6 * (self.data_value[-1] - self.data_value[-2])
-            # How to check enemy's death????
-
+    # read model asd scaler from the file
     def read_model_scaler(self):
         return None, None
+
+    # calculate and add reward for each turn to the reward array
+    def add_reward(self):
+        reward = -self.penalty
+        if self.flag_death:
+            reward -= 8
+        else:
+            if self.food_inside == 0:
+                reward += self.food_inside_prev
+            if self.flag_food_eaten_prev:
+                reward += 1
+            if  self.flag_win:
+                reward += 15
+            if self.flag_lose:
+                reward -= 15
+        self.rewards_values = np.concatenate((self.rewards_values, [reward]))
+
+    # calculate returns for each step
+    def calc_returns(self, rewards):
+        n = rewards.shape[0]
+        returns = np.zeros(n)
+        for i in range(n):
+            for j in range(n - i):
+                returns[i] += rewards[i + j] * self.gamma**j
+        return returns
+
 
     def chooseAction(self, gameState):
         """
@@ -328,8 +350,7 @@ class DummyAgent(CaptureAgent):
         """
         #time.sleep(0.06)
 
-
-        global best_action
+        self.actions = gameState.getLegalActions(self.index)
 
         '''
         You should change this in your own agent.
@@ -339,25 +360,27 @@ class DummyAgent(CaptureAgent):
         self.is_home = self.at_home(self.my_current_position, 0)
         if self.is_home:
             self.food_inside = 0
-        else:
-            self.current_drop_distance = min([self.getMazeDistance(self.my_current_position, drop) for drop in self.drop_positions])
+
+        self.current_drop_distance = min([self.getMazeDistance(self.my_current_position, drop) for drop in self.drop_positions])
 
         self.current_food_positions, self.enemy_food_positions, self.capsules_for_me, self.capsules_for_enemy = self.all_food_positions(gameState)
-
-        #self.current_food_positions.sort(key = lambda x: x[1])
+        self.current_food_positions.sort(key=lambda x: x[1])
         self.current_food_amount = len(self.current_food_positions)
-        self.my_food_positions = self.current_food_positions
+        self.my_food_positions = self.get_my_food_positions()
         if len(self.my_food_positions) > 0:
             self.my_food_distance = min([self.getMazeDistance(self.my_current_position, food) for food in self.my_food_positions])
-
-        state_data = self.create_state_data(gameState)
-
-        actions = gameState.getLegalActions(self.index)
-        action_value = -10
-        if random.random() > 0.7:
-            best_action = random.choice(actions)
         else:
-            for act in actions:
+            self.my_food_distance = float('inf')
+
+        state_data = self.create_state_data_v1(gameState)
+
+        action_value = float('-inf')
+        best_action = 'Stop'
+        if random.random() > self.epsilon:
+            while best_action == 'Stop':
+                best_action = random.choice(self.actions)
+        else:
+            for act in self.actions:
                 features = np.concatenate((state_data, self.add_move(act)))
                 features = self.my_scaler.transform(features.reshape(1, -1))
                 value = self.my_model.predict(features)
@@ -373,11 +396,10 @@ class DummyAgent(CaptureAgent):
         if self.my_current_position == (1, 1):
             self.flag_death = True
 
-        #self.data_set_current.append(np.concatenate((state_data, self.add_move(best_action))))
-        #self.q_func()
-        #self.data_value = np.concatenate((self.data_value, [self.state_action_value(gameState)]))
+        self.data_set_current.append(np.concatenate((state_data, self.add_move(best_action))))
+        self.add_reward()
 
-        #self.flag_food_eaten_prev = self.flag_food_eaten
+        self.flag_food_eaten_prev = self.flag_food_eaten
 
         return best_action
 
@@ -388,12 +410,14 @@ class DummyAgent(CaptureAgent):
         successor = gameState.generateSuccessor(self.index, action)
         return successor
 
+    # check if position in our side of the board
     def at_home(self, my_pos, deep):
         if (self.red and my_pos[0] <= self.field_mid_width - deep) or (
                 not self.red and my_pos[0] > self.field_mid_width + deep):
             return True
         return False
 
+    # return array of all food-drop positions on the board
     def get_drop_positions(self, gameState):
         positions = []
         x = self.field_mid_width
@@ -405,6 +429,9 @@ class DummyAgent(CaptureAgent):
                 positions.append((x, y))
         return positions
 
+    def get_my_food_positions(self):
+        return self.current_food_positions
+
 
 class Agent_North(DummyAgent):
     def get_my_food_positions(self):
@@ -414,6 +441,16 @@ class Agent_North(DummyAgent):
     def read_model_scaler(self):
         return models.load_model('model_North.hdf5'), joblib.load('scaler_North.sav')
 
+    def final(self, gameState):
+        if gameState.data.score > 0:
+            self.flag_win = True
+        if gameState.data.score < 0:
+            self.flag_lose = True
+        self.add_reward()
+        rev = self.rewards_values[1:]
+        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
+        df.to_csv('my_data_North.csv', mode='a', header=False, index=False)
+
 
 class Agent_South(DummyAgent):
     def get_my_food_positions(self):
@@ -422,3 +459,13 @@ class Agent_South(DummyAgent):
 
     def read_model_scaler(self):
         return models.load_model('model_South.hdf5'), joblib.load('scaler_South.sav')
+
+    def final(self, gameState):
+        if gameState.data.score > 0:
+            self.flag_win = True
+        if gameState.data.score < 0:
+            self.flag_lose = True
+        self.add_reward()
+        rev = self.rewards_values[1:]
+        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
+        df.to_csv('my_data_South.csv', mode='a', header=False, index=False)

@@ -32,6 +32,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 import math
 import random
+import os.path
+import pickle
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -46,7 +48,7 @@ NUM_GAMES = 0
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first='OffensiveReflexAgent', second='DefensiveReflexAgent'):
+               first='DefensiveReflexAgent', second='OffensiveReflexAgent'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -120,8 +122,8 @@ class ReflexCaptureAgent(CaptureAgent):
     def registerInitialState(self, gameState):
         self.start = gameState.getAgentPosition(self.index)
         CaptureAgent.registerInitialState(self, gameState)
-        self.policy_net = self.createModel(len(self.getWeights(gameState, 'testing')), 5)
-        self.target_net = self.createModel(len(self.getWeights(gameState, 'testing')), 5)
+        self.policy_net = self.loadModel(gameState, 'models/policy{}.pt'.format(self.index))
+        self.target_net = self.loadModel(gameState, 'models/target{}.pt'.format(self.index))
         self.BATCH_SIZE = 128
         self.GAMMA = 0.999
         self.EPS_START = 0.9
@@ -129,7 +131,7 @@ class ReflexCaptureAgent(CaptureAgent):
         self.EPS_DECAY = 200
         self.TARGET_UPDATE = 10
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
-        self.memory = ReplayMemory(50000)
+        self.memory = self.loadReplayMemory('memory{}.txt'.format(self.index))
         self.steps_done = 0
         self.action_space = self.mapActions()
         global NUM_GAMES
@@ -203,7 +205,7 @@ class ReflexCaptureAgent(CaptureAgent):
 
         maxValue = max(values)
         bestActions = [a for a, v in zip(actions, values) if v == maxValue]
-
+        #print(maxValue)
         foodLeft = len(self.getFood(gameState).asList())
         bestAction = ''
         network_action = None
@@ -238,12 +240,54 @@ class ReflexCaptureAgent(CaptureAgent):
         reward = torch.tensor([reward], device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
         self.memory.push(state, network_action, next_state, reward)
+        print(self.memory.memory[0])
 
         self.optimize_model()
         if NUM_GAMES % self.TARGET_UPDATE == 0:
-            print("Number of games is", NUM_GAMES)
             self.target_net.load_state_dict(self.policy_net.state_dict())
+
+        # CREATE CHECKPOINTS FOR REPLAY MEMORY AND MODELS
+        if NUM_GAMES % 10 == 0:
+            # print(NUM_GAMES)
+            # print('Model saved...')
+            #self.saveReplayMemory(self.memory, 'memory{}.txt'.format(self.index))
+            self.saveModel(self.target_net, 'target{}.pt'.format(self.index))
+            self.saveModel(self.policy_net, 'policy{}.pt'.format(self.index))
         return bestAction
+
+    # Currently does not work, because pickle can't
+    # save some aspects of this list.
+    # TODO Instead save a class, not a list
+    def saveReplayMemory(self, memory, filename):
+        with open('models/{}'.format(filename), 'wb') as fp:
+            pickle.dump(memory, fp)
+        fp.close()
+
+    def loadReplayMemory(self, filename):
+        memory = []
+        if os.path.isfile(filename):
+            with open('models/{}'.format(filename), 'rb') as fp:
+                memory = pickle.load(fp)
+            fp.close()
+            return memory
+        else:
+            memory = ReplayMemory(50000)
+            return memory
+
+    def saveModel(self, network, filename):
+        torch.save(network.state_dict(), 'models/{}'.format(filename))
+
+    def loadModel(self, gameState, filename):
+        model = self.createModel(len(self.getWeights(gameState, 'testing')), 5)
+
+        if os.path.isfile(filename):
+            model.load_state_dict(torch.load(filename))
+            model.eval()
+            # print('Model loaded...')
+            return model
+        else:
+            # print('No model loaded... Creating new model...')
+            return model
 
     def getNextState(self, successor):
         actions = successor.getLegalActions(self.index)
@@ -373,7 +417,7 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
             dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
             features['invaderDistance'] = min(dists)
         else:
-            features['invaderDistance'] = 0
+            features['invaderDistance'] = -1000
 
         if action == Directions.STOP: features['stop'] = 1
         else: features['stop'] = 0

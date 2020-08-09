@@ -25,6 +25,7 @@ import functools
 import operator
 
 from sklearn.preprocessing import Normalizer
+from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -119,13 +120,15 @@ class DummyAgent(CaptureAgent):
         self.epsilon = 0.6 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
         self.penalty = 0.1 # penalty for each turn
+        self.epochs = 100 # number of epochs for learning
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_win = False # if game won
         self.flag_lose = False # if game lost
+        self.flag_done = False # if game over
 
         self.my_model = self.load_model()[0]
-        self.my_scaler = Normalizer()
+        self.my_scaler = StandardScaler()
 
     def load_model(self):
         return None, None
@@ -168,7 +171,7 @@ class DummyAgent(CaptureAgent):
         # food, drop predicted
         food_future_dist = np.full(5, 10 / (self.my_food_distance + 1))
         drop_future_dist = np.full(5, 10 / (self.current_drop_distance + 1))
-        if not self.flag_win and not self.flag_lose:
+        if not self.flag_done:
             for action in self.actions:
                 successor = self.getSuccessor(gameState, action)
                 new_pos = successor.getAgentState(self.index).getPosition()
@@ -261,7 +264,7 @@ class DummyAgent(CaptureAgent):
                 if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                     grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
                 enemy_future_dist[i] = dist
-                if not self.flag_win and not self.flag_lose:
+                if not self.flag_done:
                     for action in self.actions:
                         successor = self.getSuccessor(gameState, action)
                         new_pos = successor.getAgentState(self.index).getPosition()
@@ -480,11 +483,18 @@ class Agent_North(DummyAgent):
             self.flag_win = True
         if gameState.data.score < 0:
             self.flag_lose = True
-        self.add_reward()
+        self.flag_done = True
+
         self.data_set_current.append(self.create_state_data_v1(gameState))
-        all_states = self.my_scaler.transform(np.asarray(self.data_set_current))
+        all_states = np.asarray(self.data_set_current)
+        self.my_scaler.fit(all_states)
+        all_states = self.my_scaler.transform(all_states)
+
+        self.add_reward()
+
         done = np.zeros(all_states.shape[0] - 1)
         done[-1] = 1
+
         states = torch.FloatTensor(all_states[:-1, :])
         next_states = torch.FloatTensor(all_states[1:, :])
         actions = torch.FloatTensor(np.asarray(self.data_actions)).unsqueeze(1)
@@ -495,7 +505,7 @@ class Agent_North(DummyAgent):
         target_Q_network = Duel_Q_Network()
 
         gamma = 0.99
-        for epoch in range(60):
+        for epoch in range(self.epochs):
             if epoch % 4 == 0:
                 target_Q_network.load_state_dict(online_Q_network.state_dict())
             with torch.no_grad():
@@ -534,12 +544,18 @@ class Agent_South(DummyAgent):
             self.flag_win = True
         if gameState.data.score < 0:
             self.flag_lose = True
-        self.add_reward()
-        print(self.rewards_values)
+        self.flag_done = True
+
         self.data_set_current.append(self.create_state_data_v1(gameState))
-        all_states = self.my_scaler.transform(np.asarray(self.data_set_current))
+        all_states = np.asarray(self.data_set_current)
+        self.my_scaler.fit(all_states)
+        all_states = self.my_scaler.transform(all_states)
+
+        self.add_reward()
+
         done = np.zeros(all_states.shape[0] - 1)
         done[-1] = 1
+
         states = torch.FloatTensor(all_states[:-1, :])
         next_states = torch.FloatTensor(all_states[1:, :])
         actions = torch.FloatTensor(np.asarray(self.data_actions)).unsqueeze(1)
@@ -550,8 +566,8 @@ class Agent_South(DummyAgent):
         target_Q_network = Duel_Q_Network()
 
         gamma = 0.99
-        for epoch in range(60):
-            if epoch % 4 == 0:
+        for epoch in range(self.epochs):
+            if epoch % 5 == 0:
                 target_Q_network.load_state_dict(online_Q_network.state_dict())
             with torch.no_grad():
                 online_Q_next = online_Q_network(next_states)
@@ -579,10 +595,15 @@ class Duel_Q_Network(nn.Module):
         self.fc_value = nn.Linear(512, 128)
         self.fc_adv = nn.Linear(512, 128)
 
-        self.a_func = nn.Sigmoid()
+        #self.a_func = nn.Sigmoid()
+        self.a_func = nn.LeakyReLU()
 
         self.value = nn.Linear(128, 1)
         self.adv = nn.Linear(128, 5)
+
+        for mod in self.modules():
+            if isinstance(mod, nn.Linear):
+                torch.nn.init.xavier_uniform_(mod.weight)
 
     def forward(self, state):
         y = self.a_func(self.fc1(state))

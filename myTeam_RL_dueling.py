@@ -124,7 +124,7 @@ class DummyAgent(CaptureAgent):
         self.flag_lose = False # if game lost
         self.flag_done = False # if game over
 
-        self.online_Q_network, self.optimizer = self.load_model()
+        self.online_Q_network, self.optimizer, self.total_epochs = self.load_model()
         self.my_scaler = StandardScaler()
 
     # def load_model(self):
@@ -377,7 +377,8 @@ class DummyAgent(CaptureAgent):
 
     # calculate and add reward for each turn to the reward array
     def add_reward(self):
-        reward = -self.penalty
+        reward = 0
+        #reward = -self.penalty
         if self.flag_death:
             reward -= 8
         else:
@@ -403,7 +404,6 @@ class DummyAgent(CaptureAgent):
             for j in range(n - i):
                 returns[i] += rewards[i + j] * self.gamma**j
         return returns
-
 
     def chooseAction(self, gameState):
         """
@@ -488,7 +488,8 @@ class DummyAgent(CaptureAgent):
         all_states = self.my_scaler.transform(all_states)
 
         self.add_reward()
-        returns = self.calc_returns(self.rewards_values[1:])
+        #returns = self.calc_returns(self.rewards_values[1:])
+        returns = self.rewards_values[1:]
 
         done = np.zeros(all_states.shape[0] - 1)
         done[-1] = 1
@@ -499,7 +500,6 @@ class DummyAgent(CaptureAgent):
         rewards = torch.FloatTensor(returns).unsqueeze(1)
         done = torch.FloatTensor(done).unsqueeze(1)
 
-        #online_Q_network, optimizer = self.load_model()
         target_Q_network = Duel_Q_Network()
         self.online_Q_network.train()
 
@@ -516,8 +516,9 @@ class DummyAgent(CaptureAgent):
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-
-        self.save_model(self.online_Q_network, self.optimizer)
+        self.total_epochs += self.epochs
+        print('Total Epochs: ', self.total_epochs)
+        self.save_model(self.online_Q_network, self.optimizer, self.total_epochs)
 
 
 class Agent_North(DummyAgent):
@@ -528,15 +529,18 @@ class Agent_North(DummyAgent):
     def load_model(self):
         online_Q_network = Duel_Q_Network()
         optimizer = torch.optim.Adam(online_Q_network.parameters(), lr=1e-4)
+        epochs = 0
         if path.exists('model_North.pth'):
             state = torch.load('model_North.pth')
             online_Q_network.load_state_dict(state['state_dict'])
             optimizer.load_state_dict(state['optimizer'])
-        return online_Q_network, optimizer
+            epochs = state['epochs']
+        return online_Q_network, optimizer, epochs
 
-    def save_model(self, model, optimizer):
+    def save_model(self, model, optimizer, epochs):
         my_model = {'state_dict': model.state_dict(),
-                    'optimizer': optimizer.state_dict()}
+                    'optimizer': optimizer.state_dict(),
+                    'epochs': epochs}
         torch.save(my_model, 'model_North.pth')
 
 
@@ -548,15 +552,18 @@ class Agent_South(DummyAgent):
     def load_model(self):
         online_Q_network = Duel_Q_Network()
         optimizer = torch.optim.Adam(online_Q_network.parameters(), lr=1e-4)
+        epochs = 0
         if path.exists('model_South.pth'):
             state = torch.load('model_South.pth')
             online_Q_network.load_state_dict(state['state_dict'])
             optimizer.load_state_dict(state['optimizer'])
-        return online_Q_network, optimizer
+            epochs = state['epochs']
+        return online_Q_network, optimizer, epochs
 
-    def save_model(self, model, optimizer):
+    def save_model(self, model, optimizer, epochs):
         my_model = {'state_dict': model.state_dict(),
-                    'optimizer': optimizer.state_dict()}
+                    'optimizer': optimizer.state_dict(),
+                    'epochs': epochs}
         torch.save(my_model, 'model_South.pth')
 
 

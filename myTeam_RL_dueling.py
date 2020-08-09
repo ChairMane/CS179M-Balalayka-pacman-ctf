@@ -14,32 +14,29 @@
 
 from captureAgents import CaptureAgent
 import random, time, util
-from game import Directions
-from game import Grid
-import game
-import math
-import time
-import pandas as pd
+#from game import Directions
+#from game import Grid
+#import game
+#import math
+#import time
+#import pandas as pd
 import numpy as np
-import functools
-import operator
+#import functools
+#import operator
 
-from sklearn.preprocessing import Normalizer
+#from sklearn.preprocessing import Normalizer
 from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import os.path
+#import os.path
 from os import path
 
 
 #################
 # Team creation #
 #################
-# model_North = torch.load('model_North.pth')
-# model_South = torch.load('model_South.pth')
-
 
 def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='Agent_South'):
     """
@@ -119,7 +116,7 @@ class DummyAgent(CaptureAgent):
 
         self.epsilon = 0.6 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
-        self.penalty = 0.1 # penalty for each turn
+        self.penalty = -0.1 # penalty for each turn
         self.epochs = 100 # number of epochs for learning
 
         self.rewards_values = np.empty(0) # reward for each step
@@ -127,11 +124,11 @@ class DummyAgent(CaptureAgent):
         self.flag_lose = False # if game lost
         self.flag_done = False # if game over
 
-        self.my_model = self.load_model()[0]
+        self.online_Q_network, self.optimizer, self.total_epochs = self.load_model()
         self.my_scaler = StandardScaler()
 
-    def load_model(self):
-        return None, None
+    # def load_model(self):
+    #     return None, None
 
     # return 2 arrays of our indices and enemy indices
     def get_indices(self, gameState):
@@ -165,6 +162,35 @@ class DummyAgent(CaptureAgent):
     def index_to_action(self, index):
         actions = ['Stop', 'North', 'East', 'South', 'West']
         return actions[index]
+
+    # return array like [0, 1, 0, 0, 0] where 1 indicate which action was taken
+    def add_move(self, act):
+        move = np.zeros(5, dtype=int)
+
+        def stop():
+            move[0] = 1
+
+        def north():
+            move[1] = 1
+
+        def east():
+            move[2] = 1
+
+        def south():
+            move[3] = 1
+
+        def west():
+            move[4] = 1
+
+        switcher = {
+            'Stop': stop,
+            'North': north,
+            'East': east,
+            'South': south,
+            'West': west
+        }
+        switcher[act]()
+        return move
 
     # features space of games state
     def create_state_data_v1(self, gameState):
@@ -278,38 +304,6 @@ class DummyAgent(CaptureAgent):
 
         return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_positions.ravel(), grid_qualities))
 
-    # return array like [0, 1, 0, 0, 0] where 1 indicate which action was taken
-    def add_move(self, act):
-        move = np.zeros(5, dtype=int)
-        def stop():
-            move[0] = 1
-        def north():
-            move[1] = 1
-        def east():
-            move[2] = 1
-        def south():
-            move[3] = 1
-        def west():
-            move[4] = 1
-        switcher = {
-            'Stop': stop,
-            'North': north,
-            'East': east,
-            'South': south,
-            'West': west
-        }
-        switcher[act]()
-        return move
-
-    # return initial amount of enemy food
-    def get_enemy_food_amount(self, gameState):
-        blue_food = gameState.getBlueFood().asList()
-        red_food = gameState.getRedFood().asList()
-        if self.red:
-            return len(blue_food)
-        else:
-            return len(red_food)
-
     # return arrays of positions of our food, enemy food, our capsules, enemy capsules
     def all_food_positions(self, gameState):
         blue_food = gameState.getBlueFood().asList()
@@ -328,6 +322,27 @@ class DummyAgent(CaptureAgent):
             capsules_for_enemy = blue_capsules
         return current_food_positions, enemy_food_positions, capsules_for_me, capsules_for_enemy
 
+    # return initial amount of enemy food
+    def get_enemy_food_amount(self, gameState):
+        blue_food = gameState.getBlueFood().asList()
+        red_food = gameState.getRedFood().asList()
+        if self.red:
+            return len(blue_food)
+        else:
+            return len(red_food)
+
+    # return array of all food-drop positions on the board
+    def get_drop_positions(self, gameState):
+        positions = []
+        x = self.field_mid_width
+        if not self.red:
+            x += 1
+        h = int(self.field_mid_height * 2 + 1)
+        for y in range(1, h):
+            if not gameState.hasWall(x, y):
+                positions.append((x, y))
+        return positions
+
     # if action results in eating pellet
     def food_eaten_flag(self, gameState, best_action):
         flag = False
@@ -340,9 +355,29 @@ class DummyAgent(CaptureAgent):
             flag = True
         return flag
 
+    # check if position in our side of the board
+    def at_home(self, my_pos, deep):
+        if (self.red and my_pos[0] <= self.field_mid_width - deep) or (
+                not self.red and my_pos[0] > self.field_mid_width + deep):
+            return True
+        return False
+
+    # set win and lose flags
+    def set_win_lose_flags(self, gameState):
+        if gameState.data.score > 0:
+            if self.red:
+                self.flag_win = True
+            else:
+                self.flag_lose = True
+        if gameState.data.score < 0:
+            if self.red:
+                self.flag_lose = True
+            else:
+                self.flag_win = True
+
     # calculate and add reward for each turn to the reward array
     def add_reward(self):
-        reward = -self.penalty
+        reward = self.penalty
         if self.flag_death:
             reward -= 8
         else:
@@ -368,7 +403,6 @@ class DummyAgent(CaptureAgent):
             for j in range(n - i):
                 returns[i] += rewards[i + j] * self.gamma**j
         return returns
-
 
     def chooseAction(self, gameState):
         """
@@ -404,12 +438,11 @@ class DummyAgent(CaptureAgent):
 
         best_action = 'Stop'
         if random.random() > self.epsilon:
-            while best_action == 'Stop':
-                best_action = random.choice(self.actions)
+            best_action = random.choice(self.actions)
         else:
             tensor_features = torch.FloatTensor(state_data).unsqueeze(0)
-            self.my_model.eval()
-            result = self.my_model.forward(tensor_features).detach().numpy()[0]
+            self.online_Q_network.eval()
+            result = self.online_Q_network.forward(tensor_features).detach().numpy()[0]
             indices = result.argsort()[::-1]
             for ind in indices:
                 best_action = self.index_to_action(ind.item())
@@ -441,27 +474,50 @@ class DummyAgent(CaptureAgent):
         successor = gameState.generateSuccessor(self.index, action)
         return successor
 
-    # check if position in our side of the board
-    def at_home(self, my_pos, deep):
-        if (self.red and my_pos[0] <= self.field_mid_width - deep) or (
-                not self.red and my_pos[0] > self.field_mid_width + deep):
-            return True
-        return False
+    # def get_my_food_positions(self):
+    #     return None
 
-    # return array of all food-drop positions on the board
-    def get_drop_positions(self, gameState):
-        positions = []
-        x = self.field_mid_width
-        if not self.red:
-            x += 1
-        h = int(self.field_mid_height * 2 + 1)
-        for y in range(1, h):
-            if not gameState.hasWall(x, y):
-                positions.append((x, y))
-        return positions
+    def final(self, gameState):
+        self.set_win_lose_flags(gameState)
+        self.flag_done = True
 
-    def get_my_food_positions(self):
-        return self.current_food_positions
+        self.data_set_current.append(self.create_state_data_v1(gameState))
+        all_states = np.asarray(self.data_set_current)
+        self.my_scaler.fit(all_states)
+        all_states = self.my_scaler.transform(all_states)
+
+        self.add_reward()
+        #returns = self.calc_returns(self.rewards_values[1:])
+        returns = self.rewards_values[1:]
+
+        done = np.zeros(all_states.shape[0] - 1)
+        done[-1] = 1
+
+        states = torch.FloatTensor(all_states[:-1, :])
+        next_states = torch.FloatTensor(all_states[1:, :])
+        actions = torch.FloatTensor(np.asarray(self.data_actions)).unsqueeze(1)
+        rewards = torch.FloatTensor(returns).unsqueeze(1)
+        done = torch.FloatTensor(done).unsqueeze(1)
+
+        target_Q_network = Duel_Q_Network()
+        self.online_Q_network.train()
+
+        for epoch in range(self.epochs):
+            if epoch % 10 == 0:
+                target_Q_network.load_state_dict(self.online_Q_network.state_dict())
+            with torch.no_grad():
+                online_Q_next = self.online_Q_network.forward(next_states)
+                target_Q_next = target_Q_network.forward(next_states)
+                online_max_action = torch.argmax(online_Q_next, dim=1, keepdim=True)
+                y = rewards + (1 - done) * self.gamma * target_Q_next.gather(1, online_max_action.long())
+
+            loss = F.mse_loss(self.online_Q_network.forward(states).gather(1, actions.long()), y)
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+        self.total_epochs += self.epochs
+        print('Total Epochs: ', self.total_epochs)
+        self.save_model(self.online_Q_network, self.optimizer, self.total_epochs)
 
 
 class Agent_North(DummyAgent):
@@ -472,57 +528,19 @@ class Agent_North(DummyAgent):
     def load_model(self):
         online_Q_network = Duel_Q_Network()
         optimizer = torch.optim.Adam(online_Q_network.parameters(), lr=1e-4)
+        epochs = 0
         if path.exists('model_North.pth'):
             state = torch.load('model_North.pth')
             online_Q_network.load_state_dict(state['state_dict'])
             optimizer.load_state_dict(state['optimizer'])
-        return online_Q_network, optimizer
+            epochs = state['epochs']
+        return online_Q_network, optimizer, epochs
 
-    def final(self, gameState):
-        if gameState.data.score > 0:
-            self.flag_win = True
-        if gameState.data.score < 0:
-            self.flag_lose = True
-        self.flag_done = True
-
-        self.data_set_current.append(self.create_state_data_v1(gameState))
-        all_states = np.asarray(self.data_set_current)
-        self.my_scaler.fit(all_states)
-        all_states = self.my_scaler.transform(all_states)
-
-        self.add_reward()
-
-        done = np.zeros(all_states.shape[0] - 1)
-        done[-1] = 1
-
-        states = torch.FloatTensor(all_states[:-1, :])
-        next_states = torch.FloatTensor(all_states[1:, :])
-        actions = torch.FloatTensor(np.asarray(self.data_actions)).unsqueeze(1)
-        rewards = torch.FloatTensor(self.rewards_values[1:]).unsqueeze(1)
-        done = torch.FloatTensor(done).unsqueeze(1)
-
-        online_Q_network, optimizer = self.load_model()
-        target_Q_network = Duel_Q_Network()
-
-        gamma = 0.99
-        for epoch in range(self.epochs):
-            if epoch % 4 == 0:
-                target_Q_network.load_state_dict(online_Q_network.state_dict())
-            with torch.no_grad():
-                online_Q_next = online_Q_network.forward(next_states)
-                target_Q_next = target_Q_network.forward(next_states)
-                online_max_action = torch.argmax(online_Q_next, dim=1, keepdim=True)
-                y = rewards + (1 - done) * gamma * target_Q_next.gather(1, online_max_action.long())
-
-            loss = F.mse_loss(online_Q_network.forward(states).gather(1, actions.long()), y)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        my_model = {'state_dict': online_Q_network.state_dict(),
-                    'optimizer': optimizer.state_dict()}
+    def save_model(self, model, optimizer, epochs):
+        my_model = {'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'epochs': epochs}
         torch.save(my_model, 'model_North.pth')
-
 
 
 class Agent_South(DummyAgent):
@@ -533,55 +551,18 @@ class Agent_South(DummyAgent):
     def load_model(self):
         online_Q_network = Duel_Q_Network()
         optimizer = torch.optim.Adam(online_Q_network.parameters(), lr=1e-4)
+        epochs = 0
         if path.exists('model_South.pth'):
             state = torch.load('model_South.pth')
             online_Q_network.load_state_dict(state['state_dict'])
             optimizer.load_state_dict(state['optimizer'])
-        return online_Q_network, optimizer
+            epochs = state['epochs']
+        return online_Q_network, optimizer, epochs
 
-    def final(self, gameState):
-        if gameState.data.score > 0:
-            self.flag_win = True
-        if gameState.data.score < 0:
-            self.flag_lose = True
-        self.flag_done = True
-
-        self.data_set_current.append(self.create_state_data_v1(gameState))
-        all_states = np.asarray(self.data_set_current)
-        self.my_scaler.fit(all_states)
-        all_states = self.my_scaler.transform(all_states)
-
-        self.add_reward()
-
-        done = np.zeros(all_states.shape[0] - 1)
-        done[-1] = 1
-
-        states = torch.FloatTensor(all_states[:-1, :])
-        next_states = torch.FloatTensor(all_states[1:, :])
-        actions = torch.FloatTensor(np.asarray(self.data_actions)).unsqueeze(1)
-        rewards = torch.FloatTensor(self.rewards_values[1:]).unsqueeze(1)
-        done = torch.FloatTensor(done).unsqueeze(1)
-
-        online_Q_network, optimizer = self.load_model()
-        target_Q_network = Duel_Q_Network()
-
-        gamma = 0.99
-        for epoch in range(self.epochs):
-            if epoch % 5 == 0:
-                target_Q_network.load_state_dict(online_Q_network.state_dict())
-            with torch.no_grad():
-                online_Q_next = online_Q_network.forward(next_states)
-                target_Q_next = target_Q_network.forward(next_states)
-                online_max_action = torch.argmax(online_Q_next, dim=1, keepdim=True)
-                y = rewards + (1 - done) * gamma * target_Q_next.gather(1, online_max_action.long())
-
-            loss = F.mse_loss(online_Q_network.forward(states).gather(1, actions.long()), y)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        my_model = {'state_dict': online_Q_network.state_dict(),
-                    'optimizer': optimizer.state_dict()}
+    def save_model(self, model, optimizer, epochs):
+        my_model = {'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'epochs': epochs}
         torch.save(my_model, 'model_South.pth')
 
 
@@ -595,8 +576,8 @@ class Duel_Q_Network(nn.Module):
         self.fc_value = nn.Linear(512, 128)
         self.fc_adv = nn.Linear(512, 128)
 
-        #self.a_func = nn.Sigmoid()
-        self.a_func = nn.LeakyReLU()
+        self.a_func = nn.Sigmoid()
+        #self.a_func = nn.LeakyReLU()
 
         self.value = nn.Linear(128, 1)
         self.adv = nn.Linear(128, 5)

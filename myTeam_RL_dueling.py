@@ -116,7 +116,7 @@ class DummyAgent(CaptureAgent):
 
         self.epsilon = 0.6 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
-        self.penalty = 0.1 # penalty for each turn
+        self.penalty = -0.1 # penalty for each turn
         self.epochs = 100 # number of epochs for learning
 
         self.rewards_values = np.empty(0) # reward for each step
@@ -377,8 +377,7 @@ class DummyAgent(CaptureAgent):
 
     # calculate and add reward for each turn to the reward array
     def add_reward(self):
-        reward = 0
-        #reward = -self.penalty
+        reward = self.penalty
         if self.flag_death:
             reward -= 8
         else:

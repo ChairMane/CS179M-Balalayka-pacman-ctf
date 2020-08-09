@@ -91,6 +91,7 @@ class DummyAgent(CaptureAgent):
         self.my_indices, self.enemy_indices = self.get_indices(gameState)
         self.food_inside = 0
         self.food_inside_prev = 0
+        self.prev_enemy_food_amount = self.get_enemy_food_amount(gameState)
         self.flag_eat_mode = True
         self.drop_positions = self.get_drop_positions(gameState)
         self.current_food_positions = []
@@ -419,6 +420,14 @@ class DummyAgent(CaptureAgent):
         switcher[act]()
         return move
 
+    def get_enemy_food_amount(self, gameState):
+        blue_food = gameState.getBlueFood().asList()
+        red_food = gameState.getRedFood().asList()
+        if self.red:
+            return len(blue_food)
+        else:
+            return len(red_food)
+
     def all_food_positions(self, gameState):
         blue_food = gameState.getBlueFood().asList()
         red_food = gameState.getRedFood().asList()
@@ -516,6 +525,7 @@ class DummyAgent(CaptureAgent):
                 reward += 15
             if self.flag_lose:
                 reward -= 15
+            reward += self.enemy_food_amount - self.prev_enemy_food_amount
         self.rewards_values = np.concatenate((self.rewards_values, [reward]))
 
     def calc_returns(self, rewards):
@@ -554,6 +564,7 @@ class DummyAgent(CaptureAgent):
         self.current_drop_distance = min([self.getMazeDistance(self.my_current_position, drop) for drop in self.drop_positions])
 
         self.current_food_positions, self.enemy_food_positions, self.capsules_for_me, self.capsules_for_enemy = self.all_food_positions(gameState)
+        self.enemy_food_amount = len(self.enemy_food_positions)
 
         self.current_food_positions.sort(key = lambda x: x[1])
         self.current_food_amount = len(self.current_food_positions)
@@ -617,6 +628,7 @@ class DummyAgent(CaptureAgent):
         self.add_reward()
 
         self.flag_food_eaten_prev = self.flag_food_eaten
+        self.prev_enemy_food_amount = self.enemy_food_amount
 
         return best_action
 

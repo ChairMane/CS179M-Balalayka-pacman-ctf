@@ -24,21 +24,15 @@ import numpy as np
 import functools
 import operator
 
-#from sklearn.neural_network import MLPRegressor
-from sklearn.preprocessing import StandardScaler
-import joblib
-
-import keras
-from keras import models
-#from keras.callbacks import EarlyStopping
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.wrappers.scikit_learn import KerasRegressor
+from sklearn.preprocessing import Normalizer
+import torch
 
 
 #################
 # Team creation #
 #################
+model_North = torch.load('model_North.pth')
+model_South = torch.load('model_South.pth')
 
 def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='Agent_South'):
     """
@@ -103,6 +97,7 @@ class DummyAgent(CaptureAgent):
         self.my_indices, self.enemy_indices = self.get_indices(gameState)
         self.food_inside = 0
         self.food_inside_prev = 0
+        self.prev_enemy_food_amount = self.get_enemy_food_amount(gameState)
         self.drop_positions = self.get_drop_positions(gameState)
         self.flag_food_eaten = False # if pellet consumed by agent
         self.flag_food_eaten_prev = False # if pellet consumed in previous step
@@ -113,15 +108,16 @@ class DummyAgent(CaptureAgent):
         self.qualities = 13
         self.data_set_current = []
 
-        self.epsilon = 0.8 # exploration rate
-        self.gamma = 0.985 # gamma for discounted reward
+        self.epsilon = 0.6 # exploration rate
+        self.gamma = 0.99 # gamma for discounted reward
         self.penalty = 0.1 # penalty for each turn
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_win = False # if game won
         self.flag_lose = False # if game lost
 
-        self.my_model, self.my_scaler = self.read_model_scaler()
+        self.my_model = self.read_model()
+        self.my_scaler = Normalizer()
 
     # return 2 arrays of our indices and enemy indices
     def get_indices(self, gameState):
@@ -284,6 +280,15 @@ class DummyAgent(CaptureAgent):
         switcher[act]()
         return move
 
+    # return initial amount of enemy food
+    def get_enemy_food_amount(self, gameState):
+        blue_food = gameState.getBlueFood().asList()
+        red_food = gameState.getRedFood().asList()
+        if self.red:
+            return len(blue_food)
+        else:
+            return len(red_food)
+
     # return arrays of positions of our food, enemy food, our capsules, enemy capsules
     def all_food_positions(self, gameState):
         blue_food = gameState.getBlueFood().asList()
@@ -315,8 +320,8 @@ class DummyAgent(CaptureAgent):
         return flag
 
     # read model asd scaler from the file
-    def read_model_scaler(self):
-        return None, None
+    def read_model(self):
+        return None
 
     # calculate and add reward for each turn to the reward array
     def add_reward(self):
@@ -332,6 +337,8 @@ class DummyAgent(CaptureAgent):
                 reward += 15
             if self.flag_lose:
                 reward -= 15
+            reward += self.enemy_food_amount - self.prev_enemy_food_amount
+
         self.rewards_values = np.concatenate((self.rewards_values, [reward]))
 
     # calculate returns for each step
@@ -364,6 +371,8 @@ class DummyAgent(CaptureAgent):
         self.current_drop_distance = min([self.getMazeDistance(self.my_current_position, drop) for drop in self.drop_positions])
 
         self.current_food_positions, self.enemy_food_positions, self.capsules_for_me, self.capsules_for_enemy = self.all_food_positions(gameState)
+        self.enemy_food_amount = len(self.enemy_food_positions)
+
         self.current_food_positions.sort(key=lambda x: x[1])
         self.current_food_amount = len(self.current_food_positions)
         self.my_food_positions = self.get_my_food_positions()
@@ -383,7 +392,9 @@ class DummyAgent(CaptureAgent):
             for act in self.actions:
                 features = np.concatenate((state_data, self.add_move(act)))
                 features = self.my_scaler.transform(features.reshape(1, -1))
-                value = self.my_model.predict(features)
+                torch_features = torch.from_numpy(features.astype(np.float32))
+                self.my_model.eval()
+                value = self.my_model(torch_features)
                 if value > action_value:
                     best_action = act
                     action_value = value
@@ -400,6 +411,7 @@ class DummyAgent(CaptureAgent):
         self.add_reward()
 
         self.flag_food_eaten_prev = self.flag_food_eaten
+        self.prev_enemy_food_amount = self.enemy_food_amount
 
         return best_action
 
@@ -438,8 +450,8 @@ class Agent_North(DummyAgent):
         n = int(self.current_food_amount / 2)
         return self.current_food_positions[n:]
 
-    def read_model_scaler(self):
-        return models.load_model('model_North.hdf5'), joblib.load('scaler_North.sav')
+    def read_model(self):
+        return model_North
 
     def final(self, gameState):
         if gameState.data.score > 0:
@@ -447,8 +459,9 @@ class Agent_North(DummyAgent):
         if gameState.data.score < 0:
             self.flag_lose = True
         self.add_reward()
-        rev = self.rewards_values[1:]
-        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
+        returns = self.calc_returns(self.rewards_values[1:])
+        #print(returns)
+        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), returns)))
         df.to_csv('my_data_North.csv', mode='a', header=False, index=False)
 
 
@@ -457,8 +470,8 @@ class Agent_South(DummyAgent):
         n = int((self.current_food_amount + 1) / 2)
         return self.current_food_positions[:n]
 
-    def read_model_scaler(self):
-        return models.load_model('model_South.hdf5'), joblib.load('scaler_South.sav')
+    def read_model(self):
+        return model_South
 
     def final(self, gameState):
         if gameState.data.score > 0:
@@ -466,6 +479,6 @@ class Agent_South(DummyAgent):
         if gameState.data.score < 0:
             self.flag_lose = True
         self.add_reward()
-        rev = self.rewards_values[1:]
-        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
+        returns = self.calc_returns(self.rewards_values[1:])
+        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), returns)))
         df.to_csv('my_data_South.csv', mode='a', header=False, index=False)

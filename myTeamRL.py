@@ -240,35 +240,35 @@ class ReflexCaptureAgent(CaptureAgent):
         reward = torch.tensor([reward], device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
         self.memory.push(state, network_action, next_state, reward)
-        print(self.memory.memory[0])
 
         self.optimize_model()
         if NUM_GAMES % self.TARGET_UPDATE == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
         # CREATE CHECKPOINTS FOR REPLAY MEMORY AND MODELS
-        if NUM_GAMES % 10 == 0:
+        if NUM_GAMES % 2 == 0:
             # print(NUM_GAMES)
             # print('Model saved...')
-            #self.saveReplayMemory(self.memory, 'memory{}.txt'.format(self.index))
+            print(self.memory.memory)
+            self.saveReplayMemory(self.memory.memory, 'memory{}.txt'.format(self.index))
             self.saveModel(self.target_net, 'target{}.pt'.format(self.index))
             self.saveModel(self.policy_net, 'policy{}.pt'.format(self.index))
         return bestAction
 
-    # Currently does not work, because pickle can't
-    # save some aspects of this list.
-    # TODO Instead save a class, not a list
     def saveReplayMemory(self, memory, filename):
         with open('models/{}'.format(filename), 'wb') as fp:
             pickle.dump(memory, fp)
         fp.close()
 
     def loadReplayMemory(self, filename):
-        memory = []
+        memory_list = []
         if os.path.isfile(filename):
             with open('models/{}'.format(filename), 'rb') as fp:
-                memory = pickle.load(fp)
+                memory_list = pickle.load(fp)
             fp.close()
+            memory = ReplayMemory(50000)
+            memory.memory = memory_list
+            memory.position = len(memory_list)
             return memory
         else:
             memory = ReplayMemory(50000)

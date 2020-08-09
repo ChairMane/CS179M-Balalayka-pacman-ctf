@@ -354,7 +354,7 @@ class DummyAgent(CaptureAgent):
                 reward += 15
             if self.flag_lose:
                 reward -= 15
-            #reward += (self.enemy_food_amount - self.prev_enemy_food_amount) / 5
+            reward += (self.enemy_food_amount - self.prev_enemy_food_amount) / 5
             if self.prev_my_food_distance > self.my_food_distance:
                 reward += 0.5
 
@@ -509,12 +509,12 @@ class Agent_North(DummyAgent):
             if epoch % 4 == 0:
                 target_Q_network.load_state_dict(online_Q_network.state_dict())
             with torch.no_grad():
-                online_Q_next = online_Q_network(next_states)
-                target_Q_next = target_Q_network(next_states)
+                online_Q_next = online_Q_network.forward(next_states)
+                target_Q_next = target_Q_network.forward(next_states)
                 online_max_action = torch.argmax(online_Q_next, dim=1, keepdim=True)
                 y = rewards + (1 - done) * gamma * target_Q_next.gather(1, online_max_action.long())
 
-            loss = F.mse_loss(online_Q_network(states).gather(1, actions.long()), y)
+            loss = F.mse_loss(online_Q_network.forward(states).gather(1, actions.long()), y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -570,12 +570,12 @@ class Agent_South(DummyAgent):
             if epoch % 5 == 0:
                 target_Q_network.load_state_dict(online_Q_network.state_dict())
             with torch.no_grad():
-                online_Q_next = online_Q_network(next_states)
-                target_Q_next = target_Q_network(next_states)
+                online_Q_next = online_Q_network.forward(next_states)
+                target_Q_next = target_Q_network.forward(next_states)
                 online_max_action = torch.argmax(online_Q_next, dim=1, keepdim=True)
                 y = rewards + (1 - done) * gamma * target_Q_next.gather(1, online_max_action.long())
 
-            loss = F.mse_loss(online_Q_network(states).gather(1, actions.long()), y)
+            loss = F.mse_loss(online_Q_network.forward(states).gather(1, actions.long()), y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

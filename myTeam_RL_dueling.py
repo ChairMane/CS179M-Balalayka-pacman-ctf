@@ -114,10 +114,10 @@ class DummyAgent(CaptureAgent):
         self.data_set_current = []
         self.data_actions = ['Stop']
 
-        self.epsilon = 0.6 # exploration rate
+        self.epsilon = 0.4 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
         self.penalty = -1 # penalty for each turn
-        self.epochs = 100 # number of epochs for learning
+        self.epochs = 20 # number of epochs for learning
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_win = False # if game won
@@ -183,7 +183,7 @@ class DummyAgent(CaptureAgent):
         return action
 
     # return array like [0, 1, 0, 0, 0] where 1 indicate which action was taken
-    def add_move(self, act):
+    def get_action_array(self, act):
         move = np.zeros(5, dtype=int)
 
         def stop():
@@ -320,8 +320,8 @@ class DummyAgent(CaptureAgent):
         grid_qualities[11] = len(self.current_food_positions)
         # amount of food for enemy
         grid_qualities[12] = len(self.enemy_food_positions)
-
-        return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_positions.ravel(), grid_qualities))
+        # last action
+        return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_positions.ravel(), grid_qualities, self.get_action_array(self.data_actions[-1])))
 
     def create_state_data_simple(self, gameState):
         # food, drop predicted
@@ -516,7 +516,7 @@ class DummyAgent(CaptureAgent):
         state_data = np.asarray(self.create_state_data_v1(gameState))
 
         self.best_action = 'Stop'
-        if random.random() > self.epsilon:
+        if random.random() < self.epsilon:
             self.best_action = random.choice(self.actions)
         else:
             tensor_features = torch.FloatTensor(state_data).unsqueeze(0)
@@ -589,7 +589,7 @@ class DummyAgent(CaptureAgent):
         losses = []
 
         for epoch in range(self.epochs):
-            if epoch % 4 == 0:
+            if epoch % 1 == 0:
                 target_Q_network.load_state_dict(self.online_Q_network.state_dict())
             with torch.no_grad():
                 online_Q_next = self.online_Q_network.forward(next_states)
@@ -610,7 +610,7 @@ class DummyAgent(CaptureAgent):
 
         # debugging
         print('Total Epochs: ', self.total_epochs)
-        print(losses[-4:])
+        print(losses)
 
         self.save_model(self.online_Q_network, self.optimizer, self.total_epochs)
 
@@ -666,7 +666,7 @@ class Duel_Q_Network(nn.Module):
         super(Duel_Q_Network, self).__init__()
 
         # big
-        self.fc1 = nn.Linear(1122, 800)
+        self.fc1 = nn.Linear(1127, 800)
         self.fc2 = nn.Linear(800, 512)
 
         self.fc_value = nn.Linear(512, 128)

@@ -34,6 +34,7 @@ import math
 import random
 import os.path
 import pickle
+import copy
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -71,7 +72,15 @@ def createTeam(firstIndex, secondIndex, isRed,
 # Torch Essentials #
 ####################
 
-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+#Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+
+class Transition():
+
+    def __init__(self, state, action, next_state, reward):
+        self.state = state
+        self.action = action
+        self.next_state = next_state
+        self.reward = reward
 
 # This class will hold the history of states, actions, rewards and next states
 # This will be used to train the agent
@@ -82,11 +91,11 @@ class ReplayMemory(object):
         self.memory = []
         self.position = 0
 
-    def push(self, *args):
+    def push(self, state, action, next_state, reward):
         """Saves a transition."""
         if len(self.memory) < self.capacity:
             self.memory.append(None)
-        self.memory[self.position] = Transition(*args)
+        self.memory[self.position] = (state, action, next_state, reward)
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size):
@@ -134,11 +143,13 @@ class ReflexCaptureAgent(CaptureAgent):
         self.memory = self.loadReplayMemory('memory{}.txt'.format(self.index))
         self.steps_done = 0
         self.action_space = self.mapActions()
-        global NUM_GAMES
-        NUM_GAMES += 1
-
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
+        global NUM_GAMES
+        if self.index == 0:
+            NUM_GAMES += 1
+            print('Number of games so far', NUM_GAMES)
+
 
     def createModel(self, feature_size, action_size):
         return DQN(feature_size, action_size).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
@@ -150,17 +161,17 @@ class ReflexCaptureAgent(CaptureAgent):
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
         # to Transition of batch-arrays.
-        batch = Transition(*zip(*transitions))
+        batch = [*zip(*transitions)]
 
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                batch.next_state)), device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), dtype=torch.bool)
-        non_final_next_states = torch.cat([s for s in batch.next_state
+                                                batch[2])), device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), dtype=torch.bool)
+        non_final_next_states = torch.cat([s for s in batch[2]
                                            if s is not None])
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
+        state_batch = torch.cat(batch[0])
+        action_batch = torch.cat(batch[1])
+        reward_batch = torch.cat(batch[3])
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
@@ -205,8 +216,7 @@ class ReflexCaptureAgent(CaptureAgent):
 
         maxValue = max(values)
         bestActions = [a for a, v in zip(actions, values) if v == maxValue]
-        #print(maxValue)
-        foodLeft = len(self.getFood(gameState).asList())
+
         bestAction = ''
         network_action = None
         next_state = []
@@ -222,18 +232,28 @@ class ReflexCaptureAgent(CaptureAgent):
             with torch.no_grad():
                 input = torch.FloatTensor(list(self.getFeatures(gameState, bestAction).values())).unsqueeze(0).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
                 policy_net = self.policy_net(input)
-                network_action = policy_net.max(1)[1].view(1, 1)
-                # print(policy_net)
-                # print(network_action.item())
-                # print(self.action_space[network_action.item()])
-                # print(actions)
+                next_best = policy_net.max(1)[1].view(1, 1).item()
+
+                if self.action_space[next_best] not in actions:
+                    i = 1
+                    while self.action_space[next_best] not in actions:
+                        next_best = policy_net.topk(5)[1][0][i].item()
+                        i += 1
+                    bestAction = self.action_space[next_best]
+                else:
+                    bestAction = self.action_space[next_best]
+
+            key_list = list(self.action_space.keys())
+            val_list = list(self.action_space.values())
+            best_action_index = key_list[val_list.index(bestAction)]
+            network_action = torch.tensor([[best_action_index]], device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), dtype=torch.long)
         else:
             bestAction = random.choice(bestActions)
-            input = torch.FloatTensor(list(self.getFeatures(gameState, bestAction).values())).unsqueeze(0).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-            policy_net = self.policy_net(input)
-            network_action = policy_net.max(1)[1].view(1, 1)
+            key_list = list(self.action_space.keys())
+            val_list = list(self.action_space.values())
+            best_action_index = key_list[val_list.index(bestAction)]
+            network_action = torch.tensor([[best_action_index]], device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), dtype=torch.long)
 
-        # Take a look at this function, because it is not real yet.
         state = torch.FloatTensor(list(self.getFeatures(gameState, bestAction).values())).unsqueeze(0).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         next_state = torch.FloatTensor(self.getNextState(self.getSuccessor(gameState, bestAction))).unsqueeze(0).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         reward = self.getRewards(gameState, bestAction)
@@ -244,12 +264,6 @@ class ReflexCaptureAgent(CaptureAgent):
         self.optimize_model()
         if NUM_GAMES % self.TARGET_UPDATE == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
-
-        # CREATE CHECKPOINTS FOR REPLAY MEMORY AND MODELS
-        if NUM_GAMES % 2 == 0:
-            # print(NUM_GAMES)
-            # print('Model saved...')
-            print(self.memory.memory)
             self.saveReplayMemory(self.memory.memory, 'memory{}.txt'.format(self.index))
             self.saveModel(self.target_net, 'target{}.pt'.format(self.index))
             self.saveModel(self.policy_net, 'policy{}.pt'.format(self.index))
@@ -261,8 +275,7 @@ class ReflexCaptureAgent(CaptureAgent):
         fp.close()
 
     def loadReplayMemory(self, filename):
-        memory_list = []
-        if os.path.isfile(filename):
+        if os.path.isfile('models/{}'.format(filename)):
             with open('models/{}'.format(filename), 'rb') as fp:
                 memory_list = pickle.load(fp)
             fp.close()

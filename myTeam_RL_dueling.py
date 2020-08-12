@@ -101,30 +101,30 @@ class DummyAgent(CaptureAgent):
         self.my_indices, self.enemy_indices = self.get_indices(gameState)
         self.food_inside = 0
         self.food_inside_prev = 0
-        self.prev_my_food_distance = float('inf')
+        self.approaching_food_reward = 0
         self.prev_enemy_food_amount = self.get_enemy_food_amount(gameState)
         self.drop_positions = self.get_drop_positions(gameState)
         self.flag_food_eaten = False # if pellet consumed by agent
-        self.flag_food_eaten_prev = False # if pellet consumed in previous step
         self.flag_death = False # if agent got eaten
+        #self.flag_enemy_death = False # if enemy got eaten
 
         self.data_grid_radius = 5
         self.features_groups = 9
-        self.qualities = 13
+        self.qualities = 11
         self.data_set_current = []
         self.data_actions = ['Stop']
 
         self.epsilon = 0.4 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
-        self.penalty = -0.5 # penalty for each turn
-        self.epochs = 10 # number of epochs for learning
+        self.penalty = 0 # penalty for each turn
+        self.epochs = 20 # number of epochs for learning
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_win = False # if game won
         self.flag_lose = False # if game lost
         self.flag_done = False # if game over
 
-        self.online_Q_network, self.optimizer, self.total_epochs = self.load_model()
+        self.online_Q_network, self.optimizer, self.total_epochs, self.num_games_played = self.load_model()
         self.my_scaler = StandardScaler()
 
     # def load_model(self):
@@ -304,7 +304,6 @@ class DummyAgent(CaptureAgent):
                 if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
                     continue
                 dist = 10 / (self.getMazeDistance(self.my_current_position, pos) + 1)
-                grid_qualities[9 + i] = dist
                 (x_t, y_t) = pos
                 if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
                     grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
@@ -317,16 +316,16 @@ class DummyAgent(CaptureAgent):
         # food inside
         grid_qualities[4] = self.food_inside
         # amount of food for us
-        grid_qualities[11] = len(self.current_food_positions)
+        grid_qualities[9] = len(self.current_food_positions)
         # amount of food for enemy
-        grid_qualities[12] = len(self.enemy_food_positions)
+        grid_qualities[10] = len(self.enemy_food_positions)
         # last action
         return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_positions.ravel(), grid_qualities, self.get_action_array(self.data_actions[-1])))
 
     def create_state_data_simple(self, gameState):
         # food, drop predicted
-        food_future_dist = np.full(5, self.my_food_distance)
-        drop_future_dist = np.full(5, self.current_drop_distance)
+        food_future_dist = np.full(5, 10 / (self.my_food_distance + 1))
+        drop_future_dist = np.full(5, 10 / (self.current_drop_distance + 1))
         if not self.flag_done:
             for action in self.actions:
                 successor = self.getSuccessor(gameState, action)
@@ -334,9 +333,8 @@ class DummyAgent(CaptureAgent):
                 i = self.action_to_index(action)
                 food_dist = min([self.getMazeDistance(new_pos, food) for food in self.my_food_positions])
                 drop_dist = min([self.getMazeDistance(new_pos, drop) for drop in self.drop_positions])
-                food_future_dist[i] = food_dist
-                drop_future_dist[i] = drop_dist
-
+                food_future_dist[i] = 10 / (food_dist + 1)
+                drop_future_dist[i] = 10 / (drop_dist + 1)
 
         grid_qualities = np.zeros(self.qualities, dtype=int)
 
@@ -365,20 +363,20 @@ class DummyAgent(CaptureAgent):
             if pos:
                 if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
                     continue
-                dist = self.getMazeDistance(self.my_current_position, pos)
-                grid_qualities[9 + i] = dist
+                dist = 10 / (self.getMazeDistance(self.my_current_position, pos) + 1)
                 enemy_future_dist[i] = dist
                 if not self.flag_done:
                     for action in self.actions:
                         successor = self.getSuccessor(gameState, action)
                         new_pos = successor.getAgentState(self.index).getPosition()
-                        enemy_future_dist[i, self.action_to_index(action)] = self.getMazeDistance(new_pos, pos)
+                        enemy_future_dist[i, self.action_to_index(action)] = 10 / (
+                                    self.getMazeDistance(new_pos, pos) + 1)
         # food inside
         grid_qualities[4] = self.food_inside
         # amount of food for us
-        grid_qualities[11] = len(self.current_food_positions)
+        grid_qualities[9] = len(self.current_food_positions)
         # amount of food for enemy
-        grid_qualities[12] = len(self.enemy_food_positions)
+        grid_qualities[10] = len(self.enemy_food_positions)
 
         return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_qualities))
 
@@ -409,6 +407,19 @@ class DummyAgent(CaptureAgent):
         else:
             return len(red_food)
 
+    # return approaching food reward
+    def get_approaching_food_reward(self, gameState, action):
+        reward = 0
+        successor = self.getSuccessor(gameState, action)
+        new_pos = successor.getAgentState(self.index).getPosition()
+        if len(self.my_food_positions) > 0:
+            new_distance = min([self.getMazeDistance(new_pos, food) for food in self.my_food_positions])
+            if new_distance > self.my_food_distance:
+                reward -= 1
+            if new_distance < self.my_food_distance:
+                reward += 1
+        return reward
+
     # return array of all food-drop positions on the board
     def get_drop_positions(self, gameState):
         positions = []
@@ -433,6 +444,18 @@ class DummyAgent(CaptureAgent):
             flag = True
         return flag
 
+    # get enemy's death flag
+    def check_enemy_deaf(self, gameState, action):
+        successor = self.getSuccessor(gameState, action)
+        new_pos = successor.getAgentState(self.index).getPosition()
+        if self.at_home(new_pos, 0) and gameState.getAgentState(self.index).scaredTimer == 0:
+            for ind in self.enemy_indices:
+                pos = gameState.getAgentPosition(ind)
+                if pos:
+                    if pos == new_pos:
+                        return True
+        return False
+
     # check if position in our side of the board
     def at_home(self, my_pos, deep):
         if (self.red and my_pos[0] <= self.field_mid_width - deep) or (
@@ -455,28 +478,24 @@ class DummyAgent(CaptureAgent):
 
     # calculate and add reward for each turn to the reward array
     def add_reward(self):
-        reward = self.penalty
+        reward = 0
+        reward -= self.penalty
         if self.flag_done:
             if  self.flag_win:
-                reward += 50
+                reward += 1
             if self.flag_lose:
-                reward -= 50
+                reward -= 1
         else:
+            if self.flag_food_eaten:
+                reward += 1
+            if self.data_actions[-1] == self.get_reverse(self.best_action):
+                reward -= self.penalty
+            reward += self.approaching_food_reward
             if self.flag_death:
-                reward -= 15
+                reward -= 1
             else:
                 if self.food_inside == 0 and self.food_inside_prev > 0:
-                    reward += 5
-
-                if self.my_food_distance < self.prev_my_food_distance:
                     reward += 1
-                else:
-                    reward -= 1
-
-                if self.flag_food_eaten_prev:
-                    reward += 3
-                if self.data_actions[-1] == self.get_reverse(self.best_action):
-                    reward -= self.penalty
 
         self.rewards_values = np.concatenate((self.rewards_values, [reward]))
 
@@ -519,7 +538,7 @@ class DummyAgent(CaptureAgent):
         else:
             self.my_food_distance = float('inf')
 
-        state_data = np.asarray(self.create_state_data_v1(gameState))
+        state_data = np.asarray(self.create_state_data_simple(gameState))
 
         self.best_action = 'Stop'
         if random.random() < self.epsilon:
@@ -534,10 +553,6 @@ class DummyAgent(CaptureAgent):
                 if self.best_action in self.actions:
                     break
 
-        self.flag_food_eaten = self.food_eaten_flag(gameState, self.best_action)
-        if self.flag_food_eaten:
-            self.food_inside += 1
-
         self.flag_death = False
         if self.my_current_position == (1, 1):
             self.flag_death = True
@@ -546,9 +561,13 @@ class DummyAgent(CaptureAgent):
         self.add_reward()
         self.data_actions.append(self.best_action)
 
-        self.flag_food_eaten_prev = self.flag_food_eaten
-        self.prev_enemy_food_amount = self.enemy_food_amount
-        self.prev_my_food_distance = self.my_food_distance
+        self.flag_food_eaten = self.food_eaten_flag(gameState, self.best_action)
+        if self.flag_food_eaten:
+            self.food_inside += 1
+        self.food_inside_prev = self.food_inside
+
+        self.approaching_food_reward = self.get_approaching_food_reward(gameState, self.best_action)
+
 
         return self.best_action
 
@@ -566,7 +585,7 @@ class DummyAgent(CaptureAgent):
         self.set_win_lose_flags(gameState)
         self.flag_done = True
 
-        self.data_set_current.append(self.create_state_data_v1(gameState))
+        self.data_set_current.append(self.create_state_data_simple(gameState))
         all_states = np.asarray(self.data_set_current)
 
         self.my_scaler.fit(all_states)
@@ -612,13 +631,17 @@ class DummyAgent(CaptureAgent):
             self.optimizer.step()
 
         self.total_epochs += self.epochs
+        self.num_games_played += 1
 
         # debugging
         print('Total Epochs: ', self.total_epochs)
-        print(losses)
-        print('Reward Sum', torch.sum(rewards).item())
+        print('Total games: ', self.num_games_played)
+        #print(losses)
+        #print('Reward Sum', torch.sum(rewards).item())
+        #print(self.rewards_values[1:])
+        #print(self.data_actions[1:])
 
-        self.save_model(self.online_Q_network, self.optimizer, self.total_epochs)
+        self.save_model(self.online_Q_network, self.optimizer, self.total_epochs, self.num_games_played)
 
 
 class Agent_North(DummyAgent):
@@ -630,17 +653,20 @@ class Agent_North(DummyAgent):
         online_Q_network = Duel_Q_Network()
         optimizer = torch.optim.Adam(online_Q_network.parameters(), lr=1e-4)
         epochs = 0
+        games = 0
         if path.exists('model_North.pth'):
             state = torch.load('model_North.pth')
             online_Q_network.load_state_dict(state['state_dict'])
             optimizer.load_state_dict(state['optimizer'])
             epochs = state['epochs']
-        return online_Q_network, optimizer, epochs
+            games = state['games']
+        return online_Q_network, optimizer, epochs, games
 
-    def save_model(self, model, optimizer, epochs):
+    def save_model(self, model, optimizer, epochs, games):
         my_model = {'state_dict': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
-                    'epochs': epochs}
+                    'epochs': epochs,
+                    'games': games}
         torch.save(my_model, 'model_North.pth')
 
 
@@ -653,17 +679,20 @@ class Agent_South(DummyAgent):
         online_Q_network = Duel_Q_Network()
         optimizer = torch.optim.Adam(online_Q_network.parameters(), lr=1e-4)
         epochs = 0
+        games = 0
         if path.exists('model_South.pth'):
             state = torch.load('model_South.pth')
             online_Q_network.load_state_dict(state['state_dict'])
             optimizer.load_state_dict(state['optimizer'])
             epochs = state['epochs']
-        return online_Q_network, optimizer, epochs
+            games = state['games']
+        return online_Q_network, optimizer, epochs, games
 
-    def save_model(self, model, optimizer, epochs):
+    def save_model(self, model, optimizer, epochs, games):
         my_model = {'state_dict': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
-                    'epochs': epochs}
+                    'epochs': epochs,
+                    'games': games}
         torch.save(my_model, 'model_South.pth')
 
 
@@ -672,27 +701,27 @@ class Duel_Q_Network(nn.Module):
         super(Duel_Q_Network, self).__init__()
 
         # big
-        self.fc1 = nn.Linear(1127, 800)
-        self.fc2 = nn.Linear(800, 512)
-
-        self.fc_value = nn.Linear(512, 128)
-        self.fc_adv = nn.Linear(512, 128)
-
-        self.value = nn.Linear(128, 1)
-        self.adv = nn.Linear(128, 5)
+        # self.fc1 = nn.Linear(1125, 800)
+        # self.fc2 = nn.Linear(800, 512)
+        #
+        # self.fc_value = nn.Linear(512, 128)
+        # self.fc_adv = nn.Linear(512, 128)
+        #
+        # self.value = nn.Linear(128, 1)
+        # self.adv = nn.Linear(128, 5)
 
         # simple
-        # self.fc1 = nn.Linear(33, 42)
-        # self.fc2 = nn.Linear(42, 21)
-        #
-        # self.fc_value = nn.Linear(21, 7)
-        # self.fc_adv = nn.Linear(21, 11)
-        #
-        # self.value = nn.Linear(7, 1)
-        # self.adv = nn.Linear(11, 5)
+        self.fc1 = nn.Linear(31, 42)
+        self.fc2 = nn.Linear(42, 21)
+
+        self.fc_value = nn.Linear(21, 7)
+        self.fc_adv = nn.Linear(21, 11)
+
+        self.value = nn.Linear(7, 1)
+        self.adv = nn.Linear(11, 5)
 
         self.a_func = nn.Sigmoid()
-        # self.a_func = nn.LeakyReLU()
+        #self.a_func = nn.LeakyReLU()
 
         for mod in self.modules():
             if isinstance(mod, nn.Linear):

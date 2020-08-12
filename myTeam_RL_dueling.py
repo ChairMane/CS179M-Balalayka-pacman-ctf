@@ -116,8 +116,8 @@ class DummyAgent(CaptureAgent):
 
         self.epsilon = 0.4 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
-        self.penalty = -1 # penalty for each turn
-        self.epochs = 20 # number of epochs for learning
+        self.penalty = -0.5 # penalty for each turn
+        self.epochs = 10 # number of epochs for learning
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_win = False # if game won
@@ -458,19 +458,25 @@ class DummyAgent(CaptureAgent):
         reward = self.penalty
         if self.flag_done:
             if  self.flag_win:
-                reward += 15
+                reward += 50
             if self.flag_lose:
                 reward -= 50
         else:
-            if self.food_inside == 0:
-                reward += self.food_inside_prev * 2
-            if self.flag_food_eaten_prev:
-                reward += 3
-            reward += (self.enemy_food_amount - self.prev_enemy_food_amount) / 2
-            if self.prev_my_food_distance > self.my_food_distance:
-                reward += 2
-            if self.data_actions[-1] == self.get_reverse(self.best_action):
-                reward -= 1
+            if self.flag_death:
+                reward -= 15
+            else:
+                if self.food_inside == 0 and self.food_inside_prev > 0:
+                    reward += 5
+
+                if self.my_food_distance < self.prev_my_food_distance:
+                    reward += 1
+                else:
+                    reward -= 1
+
+                if self.flag_food_eaten_prev:
+                    reward += 3
+                if self.data_actions[-1] == self.get_reverse(self.best_action):
+                    reward -= self.penalty
 
         self.rewards_values = np.concatenate((self.rewards_values, [reward]))
 
@@ -569,8 +575,7 @@ class DummyAgent(CaptureAgent):
         actions = np.asarray(self.actions_to_indices(self.data_actions))
 
         self.add_reward()
-        returns = self.rewards_values[1:]
-        #returns = self.calc_returns(returns)
+        rewards = self.rewards_values[1:]
 
         done = np.zeros(all_states.shape[0] - 1)
         done[-1] = 1
@@ -578,7 +583,7 @@ class DummyAgent(CaptureAgent):
         states = torch.FloatTensor(all_states[:-1, :])
         next_states = torch.FloatTensor(all_states[1:, :])
         actions = torch.FloatTensor(actions[1:]).unsqueeze(1)
-        rewards = torch.FloatTensor(returns).unsqueeze(1)
+        rewards = torch.FloatTensor(rewards).unsqueeze(1)
         done = torch.FloatTensor(done).unsqueeze(1)
 
         target_Q_network = Duel_Q_Network()
@@ -611,6 +616,7 @@ class DummyAgent(CaptureAgent):
         # debugging
         print('Total Epochs: ', self.total_epochs)
         print(losses)
+        print('Reward Sum', torch.sum(rewards).item())
 
         self.save_model(self.online_Q_network, self.optimizer, self.total_epochs)
 

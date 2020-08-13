@@ -43,7 +43,6 @@ from itertools import count
 
 NUM_GAMES = 0
 
-
 #################
 # Team creation #
 #################
@@ -104,6 +103,9 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
+global_memory0 = ReplayMemory(50000)
+global_memory2 = ReplayMemory(50000)
+
 class DQN(nn.Module):
 
     def __init__(self, feature_size, action_size):
@@ -139,6 +141,7 @@ class ReflexCaptureAgent(CaptureAgent):
         self.EPS_END = 0.05
         self.EPS_DECAY = 200
         self.TARGET_UPDATE = 10
+        self.capacity = 50000
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
         self.memory = self.loadReplayMemory('memory{}.txt'.format(self.index))
         self.steps_done = 0
@@ -150,6 +153,17 @@ class ReflexCaptureAgent(CaptureAgent):
             NUM_GAMES += 1
             print('Number of games so far', NUM_GAMES)
 
+    def final(self, gameState):
+        if self.index == 0:
+            global global_memory0
+            if (global_memory0.position + 300) > self.capacity:
+                print('Starting to write index 0 to file...')
+                self.saveReplayMemory(global_memory0.memory, 'memory{}.txt'.format(self.index))
+        elif self.index == 2:
+            global global_memory2
+            if (global_memory2.position + 300) > self.capacity:
+                print('Starting to write index 2 to file...')
+                self.saveReplayMemory(global_memory2.memory, 'memory{}.txt'.format(self.index))
 
     def createModel(self, feature_size, action_size):
         return DQN(feature_size, action_size).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
@@ -261,10 +275,16 @@ class ReflexCaptureAgent(CaptureAgent):
 
         self.memory.push(state, network_action, next_state, reward)
 
+        if self.index == 0:
+            global global_memory0
+            global_memory0.push(state, network_action, next_state, reward)
+        elif self.index == 2:
+            global global_memory2
+            global_memory2.push(state, network_action, next_state, reward)
+
         self.optimize_model()
         if NUM_GAMES % self.TARGET_UPDATE == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
-            self.saveReplayMemory(self.memory.memory, 'memory{}.txt'.format(self.index))
             self.saveModel(self.target_net, 'target{}.pt'.format(self.index))
             self.saveModel(self.policy_net, 'policy{}.pt'.format(self.index))
         return bestAction
@@ -284,8 +304,16 @@ class ReflexCaptureAgent(CaptureAgent):
             memory.position = len(memory_list)
             return memory
         else:
-            memory = ReplayMemory(50000)
-            return memory
+            if self.index == 0:
+                global global_memory0
+                if len(global_memory0) > 0:
+                    return global_memory0
+                return ReplayMemory(50000)
+            elif self.index == 2:
+                global global_memory2
+                if len(global_memory2) > 0:
+                    return global_memory2
+                return ReplayMemory(50000)
 
     def saveModel(self, network, filename):
         torch.save(network.state_dict(), 'models/{}'.format(filename))

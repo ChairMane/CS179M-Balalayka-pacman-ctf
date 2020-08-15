@@ -104,7 +104,7 @@ class DummyAgent(CaptureAgent):
         self.qualities = 13
         self.data_set_current = []
 
-        self.epsilon = 0.8
+        self.epsilon = 0
         self.gamma = 0.99
         self.penalty = 0.1
 
@@ -598,7 +598,7 @@ class DummyAgent(CaptureAgent):
 
         action_value = float('-inf')
         best_action = 'Stop'
-        if random.random() > self.epsilon:
+        if random.random() < self.epsilon:
             #while best_action == 'Stop':
             best_action = random.choice(self.actions)
         else:
@@ -758,8 +758,8 @@ class Agent_North(DummyAgent):
         rev = self.rewards_values[1:]
         #print(rev)
         #print(self.calc_returns(rev))
-        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
-        df.to_csv('my_data_North.csv', mode='a', header=False, index=False)
+        # df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
+        # df.to_csv('my_data_North.csv', mode='a', header=False, index=False)
 
 
 class Agent_South(DummyAgent):
@@ -774,5 +774,5 @@ class Agent_South(DummyAgent):
             self.flag_lose = True
         self.add_reward()
         rev = self.rewards_values[1:]
-        df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
-        df.to_csv('my_data_South.csv', mode='a', header=False, index=False)
+        # df = pd.DataFrame(np.column_stack((np.asarray(self.data_set_current), self.calc_returns(rev))))
+        # df.to_csv('my_data_South.csv', mode='a', header=False, index=False)

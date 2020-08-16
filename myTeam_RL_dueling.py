@@ -108,6 +108,7 @@ class DummyAgent(CaptureAgent):
         self.approaching_enemy_reward = 0
         self.flag_food_eaten = False # if pellet consumed by agent
         self.flag_death = False # if agent got eaten
+        self.flag_enemy_around = False  # if enemy is around
         self.flag_enemy_death = False # if enemy got eaten
 
         self.data_grid_radius = 5
@@ -628,20 +629,23 @@ class DummyAgent(CaptureAgent):
         if self.flag_done:
             reward += self.score
         else:
-            if self.flag_food_eaten:
-                reward += 2
-            if self.food_inside_prev > 4 or self.prev_current_food_amount < 3:
-                reward += self.approaching_drop_reward
-            else:
-                reward += self.approaching_food_reward
-            reward += self.approaching_enemy_reward * 2
             if self.flag_enemy_death:
                 reward += 10
-            if self.flag_death:
+            elif self.flag_death:
                 reward -= 10
             else:
                 if self.food_inside == 0:
                     reward += self.food_inside_prev
+                if self.flag_food_eaten:
+                    reward += 2
+
+                if self.flag_enemy_around:
+                    reward += self.approaching_enemy_reward
+                else:
+                    if self.food_inside_prev > 4 or self.prev_current_food_amount < 3:
+                        reward += self.approaching_drop_reward
+                    else:
+                        reward += self.approaching_food_reward
 
         self.rewards_values = np.concatenate((self.rewards_values, [reward]))
 
@@ -729,10 +733,12 @@ class DummyAgent(CaptureAgent):
 
         self.approaching_food_reward = self.get_approaching_food_reward(gameState, self.best_action)
         self.approaching_drop_reward = self.get_approaching_drop_reward(gameState, self.best_action)
-        if self.closest_enemy_data is None:
-            self.approaching_enemy_reward = 0
-        else:
+
+        self.approaching_enemy_reward = 0
+        self.flag_enemy_around = False
+        if self.closest_enemy_data:
             self.approaching_enemy_reward = self.get_approaching_enemy_reward(gameState, self.best_action)
+            self.flag_enemy_around = True
 
         self.flag_enemy_death = self.check_enemy_deaf(gameState, self.best_action)
 

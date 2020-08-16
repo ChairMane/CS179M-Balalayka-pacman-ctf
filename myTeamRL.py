@@ -34,6 +34,7 @@ import math
 import random
 import os.path
 import pickle
+import pprint
 import copy
 import numpy as np
 import matplotlib
@@ -133,6 +134,10 @@ class ReflexCaptureAgent(CaptureAgent):
     def registerInitialState(self, gameState):
         self.start = gameState.getAgentPosition(self.index)
         CaptureAgent.registerInitialState(self, gameState)
+        global NUM_GAMES
+        if self.index == 0:
+            NUM_GAMES += 1
+            print('Number of games so far', NUM_GAMES)
         self.policy_net = self.loadModel(gameState, 'models/policy{}.pt'.format(self.index))
         self.target_net = self.loadModel(gameState, 'models/target{}.pt'.format(self.index))
         self.BATCH_SIZE = 128
@@ -148,20 +153,25 @@ class ReflexCaptureAgent(CaptureAgent):
         self.action_space = self.mapActions()
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
-        global NUM_GAMES
-        if self.index == 0:
-            NUM_GAMES += 1
-            print('Number of games so far', NUM_GAMES)
+        self.total_food = gameState.data.layout.totalFood
+        self.defended_food_difference = 0
+        self.defended_food = self.total_food
 
+
+    # UNCOMMENT THIS WHEN READY TO SAVE
     def final(self, gameState):
+        # There may be issues here where agent index 2
+        # does not fill up their memory.
+        # Must later check upon agent 2 memory being
+        # filled up properly.
         if self.index == 0:
             global global_memory0
-            if (global_memory0.position + 300) > self.capacity:
+            if NUM_GAMES == 500:
                 print('Starting to write index 0 to file...')
                 self.saveReplayMemory(global_memory0.memory, 'memory{}.txt'.format(self.index))
         elif self.index == 2:
             global global_memory2
-            if (global_memory2.position + 300) > self.capacity:
+            if NUM_GAMES == 500:
                 print('Starting to write index 2 to file...')
                 self.saveReplayMemory(global_memory2.memory, 'memory{}.txt'.format(self.index))
 
@@ -217,7 +227,9 @@ class ReflexCaptureAgent(CaptureAgent):
         """
         Picks among the actions with the highest Q(s,a).
         """
+        self.defended_food_difference = self.defended_food - len(self.getFoodYouAreDefending(gameState).asList())
         actions = gameState.getLegalActions(self.index)
+        self.defended_food = len(self.getFoodYouAreDefending(gameState).asList())
         self.current_food_position = self.all_food_positions(gameState)
         self.current_food_amount = len(self.current_food_position)
         sample = random.random()
@@ -295,13 +307,12 @@ class ReflexCaptureAgent(CaptureAgent):
         fp.close()
 
     def loadReplayMemory(self, filename):
-        if os.path.isfile('models/{}'.format(filename)):
+        if os.path.isfile('models/{}'.format(filename)) and NUM_GAMES == 1:
             with open('models/{}'.format(filename), 'rb') as fp:
                 memory_list = pickle.load(fp)
             fp.close()
             memory = ReplayMemory(50000)
             memory.memory = memory_list
-            memory.position = len(memory_list)
             return memory
         else:
             if self.index == 0:
@@ -343,11 +354,7 @@ class ReflexCaptureAgent(CaptureAgent):
         return {0 : 'Stop', 1 : 'North', 2 : 'South', 3 : 'West', 4: 'East'}
 
     def getRewards(self, gameState, bestAction):
-        food_consumed = self.food_eaten_flag(gameState, bestAction)
-        if food_consumed:
-            return 1
-        else:
-            return 0
+        return 0
 
     def food_eaten_flag(self, gameState, best_action):
         flag = False
@@ -427,6 +434,26 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
             features['distanceToFood'] = minDistance
         return features
 
+    def getRewards(self, gameState, bestAction):
+        reward = 0
+
+        # Agent eats food
+        food_consumed = self.food_eaten_flag(gameState, bestAction)
+        if food_consumed:
+            reward += 1
+
+        # Score increases or decreases
+        score = gameState.data.score
+        if score > 0:
+            reward += 1
+
+        # If agent dies
+        death = gameState.getAgentState(self.index).getPosition()
+        if death == (1, 1):
+            reward -= 1
+
+        return reward
+
     def getWeights(self, gameState, action):
         return {'successorScore': 100, 'distanceToFood': -1}
 
@@ -458,7 +485,7 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
             dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
             features['invaderDistance'] = min(dists)
         else:
-            features['invaderDistance'] = -1000
+            features['invaderDistance'] = -10
 
         if action == Directions.STOP: features['stop'] = 1
         else: features['stop'] = 0
@@ -467,6 +494,18 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
         else: features['reverse'] = 0
 
         return features
+
+    def getRewards(self, gameState, bestAction):
+        reward = 0
+
+        # check if food you defend is decreasing
+        if self.defended_food < self.total_food:
+            reward -= ((self.total_food/2) - self.defended_food)
+
+        # Here check if the previous food amount changed
+        if self.defended_food_difference < 0:
+            reward += abs(self.defended_food_difference)
+        return reward
 
     def getWeights(self, gameState, action):
         return {'numInvaders': -1000, 'onDefense': 100, 'invaderDistance': -10, 'stop': -100, 'reverse': -2}

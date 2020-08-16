@@ -411,8 +411,8 @@ class DummyAgent(CaptureAgent):
     def create_state_data_simple_v1(self, gameState):
         # food, drop, capsule, enemy prediction per action: -1 for leave, 1 for approach
         food_future_dist = np.zeros(5)
-        drop_future_dist = np.zeros(5)
         capsule_future_dist = np.zeros(5)
+        drop_future_dist = np.zeros(5)
         enemy_future_dist = np.zeros(5)
 
         grid_qualities = np.zeros(7, dtype=int)
@@ -432,14 +432,13 @@ class DummyAgent(CaptureAgent):
             grid_qualities[1] = (x_t - self.field_mid_width) / self.field_width
 
             # enemy data
-            self.create_closest_enemy_data(gameState)
-            if not self.closest_enemy_data is None:
+            if self.closest_enemy_data:
                 pos, dist, timer = self.closest_enemy_data
                 grid_qualities[2] = int(timer > 0)
                 grid_qualities[3] = 5 / dist
                 for action in self.actions:
                     i = self.action_to_index(action)
-                    enemy_future_dist[i] = self.get_approaching_enemy_adjustment(gameState, action, pos, dist)
+                    enemy_future_dist[i] = self.get_approaching_enemy_reward(gameState, action, pos, dist)
 
 
             grid_qualities[4] = self.current_food_amount
@@ -490,6 +489,19 @@ class DummyAgent(CaptureAgent):
                 reward += 1
         return reward
 
+    # return approaching capsule reward
+    def get_approaching_capsule_reward(self, gameState, action):
+        reward = 0
+        successor = self.getSuccessor(gameState, action)
+        new_pos = successor.getAgentState(self.index).getPosition()
+        if len(self.capsules_for_me) > 0:
+            new_distance = min([self.getMazeDistance(new_pos, cap) for cap in self.capsules_for_me])
+            if new_distance > self.my_capsule_distance:
+                reward -= 1
+            if new_distance < self.my_capsule_distance:
+                reward += 1
+        return reward
+
     # return approaching drop reward
     def get_approaching_drop_reward(self, gameState, action):
         reward = 0
@@ -528,9 +540,8 @@ class DummyAgent(CaptureAgent):
         return adjustment
 
     # return approaching enemy reward/penalty
-    def get_approaching_enemy_reward(self, gameState, action):
+    def get_approaching_enemy_reward(self, gameState, action, pos, dist):
         reward = 0
-        pos, dist = self.closest_enemy_data[:2]
         my_new_pos = self.action_to_pos(action, self.my_current_position)
         new_dist = self.getMazeDistance(my_new_pos, pos)
         adjustment = 0
@@ -542,19 +553,6 @@ class DummyAgent(CaptureAgent):
             reward -= adjustment
         else:
             reward += adjustment
-        return reward
-
-    # return approaching capsule reward
-    def get_approaching_capsule_reward(self, gameState, action):
-        reward = 0
-        successor = self.getSuccessor(gameState, action)
-        new_pos = successor.getAgentState(self.index).getPosition()
-        if len(self.capsules_for_me) > 0:
-            new_distance = min([self.getMazeDistance(new_pos, cap) for cap in self.capsules_for_me])
-            if new_distance > self.my_capsule_distance:
-                reward -= 1
-            if new_distance < self.my_capsule_distance:
-                reward += 1
         return reward
 
     # return array of all food-drop positions on the board
@@ -695,6 +693,7 @@ class DummyAgent(CaptureAgent):
             self.my_capsule_distance = float('inf')
 
         self.closest_enemy_data = None
+        self.create_closest_enemy_data(gameState)
 
         state_data = np.asarray(self.state_data(gameState))
         features = self.my_scaler.transform(state_data.reshape(1, -1))[0]
@@ -737,7 +736,8 @@ class DummyAgent(CaptureAgent):
         self.approaching_enemy_reward = 0
         self.flag_enemy_around = False
         if self.closest_enemy_data:
-            self.approaching_enemy_reward = self.get_approaching_enemy_reward(gameState, self.best_action)
+            pos, dist = self.closest_enemy_data[:2]
+            self.approaching_enemy_reward = self.get_approaching_enemy_reward(gameState, self.best_action, pos, dist)
             self.flag_enemy_around = True
 
         self.flag_enemy_death = self.check_enemy_deaf(gameState, self.best_action)

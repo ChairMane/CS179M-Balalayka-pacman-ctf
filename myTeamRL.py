@@ -23,7 +23,7 @@
 from captureAgents import CaptureAgent
 import distanceCalculator
 import random, time, util, sys
-from game import Directions, Actions
+from game import Directions, Actions, Grid
 import game
 from util import nearestPoint
 import torch
@@ -104,8 +104,8 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
-global_memory0 = ReplayMemory(50000)
-global_memory2 = ReplayMemory(50000)
+global_memory0 = ReplayMemory(300)
+global_memory2 = ReplayMemory(300)
 
 class DQN(nn.Module):
 
@@ -140,23 +140,32 @@ class ReflexCaptureAgent(CaptureAgent):
             print('Number of games so far', NUM_GAMES)
         self.policy_net = self.loadModel(gameState, 'models/policy{}.pt'.format(self.index))
         self.target_net = self.loadModel(gameState, 'models/target{}.pt'.format(self.index))
-        self.BATCH_SIZE = 128
+        self.BATCH_SIZE = 300
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
         self.EPS_DECAY = 200
         self.TARGET_UPDATE = 10
-        self.capacity = 50000
+        self.capacity = 300
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
         self.memory = self.loadReplayMemory('memory{}.txt'.format(self.index))
+        #print('Memory length of {}'.format(self.index), len(self.memory.memory))
         self.steps_done = 0
         self.action_space = self.mapActions()
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
         self.total_food = gameState.data.layout.totalFood
         self.defended_food_difference = 0
-        self.defended_food = self.total_food
-
+        self.defended_food = self.total_food/2
+        self.action_number = 0
+        self.field_width = gameState.data.layout.width
+        self.field_height = gameState.data.layout.height
+        self.field_mid_width = int((self.field_width - 2) / 2)
+        self.field_mid_height = int((self.field_height - 2) / 2)
+        self.drop_positions = self.get_drop_positions(gameState)
+        self.enemy_food = len(self.getFood(gameState).asList())
+        self.current_food_difference = 0
+        self.food_eaten = 0
 
     # UNCOMMENT THIS WHEN READY TO SAVE
     def final(self, gameState):
@@ -164,14 +173,15 @@ class ReflexCaptureAgent(CaptureAgent):
         # does not fill up their memory.
         # Must later check upon agent 2 memory being
         # filled up properly.
+        #print('Ending memory length for {}:'.format(self.index), len(self.memory.memory))
         if self.index == 0:
             global global_memory0
-            if NUM_GAMES == 500:
+            if NUM_GAMES == 100:
                 print('Starting to write index 0 to file...')
                 self.saveReplayMemory(global_memory0.memory, 'memory{}.txt'.format(self.index))
         elif self.index == 2:
             global global_memory2
-            if NUM_GAMES == 500:
+            if NUM_GAMES == 100:
                 print('Starting to write index 2 to file...')
                 self.saveReplayMemory(global_memory2.memory, 'memory{}.txt'.format(self.index))
 
@@ -232,6 +242,13 @@ class ReflexCaptureAgent(CaptureAgent):
         self.defended_food = len(self.getFoodYouAreDefending(gameState).asList())
         self.current_food_position = self.all_food_positions(gameState)
         self.current_food_amount = len(self.current_food_position)
+        self.current_food_difference_prev = self.current_food_difference
+        self.current_food_difference = self.enemy_food - self.current_food_amount
+        if self.food_eaten_flag() and self.index == 2:
+            self.food_eaten += 1
+        death = gameState.getAgentState(self.index).getPosition()
+        if death == (1, 1) and self.action_number > 0 and self.index == 2:
+            self.food_eaten = 0
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * self.steps_done / self.EPS_DECAY)
         self.steps_done += 1
@@ -242,7 +259,10 @@ class ReflexCaptureAgent(CaptureAgent):
 
         maxValue = max(values)
         bestActions = [a for a, v in zip(actions, values) if v == maxValue]
-
+        if self.index == 2:
+            print(actions)
+            print(values)
+            print(bestActions)
         bestAction = ''
         network_action = None
         next_state = []
@@ -258,8 +278,9 @@ class ReflexCaptureAgent(CaptureAgent):
             with torch.no_grad():
                 input = torch.FloatTensor(list(self.getFeatures(gameState, bestAction).values())).unsqueeze(0).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
                 policy_net = self.policy_net(input)
+                print('Here are the probabilities', policy_net)
                 next_best = policy_net.max(1)[1].view(1, 1).item()
-
+                print('Here is the action the network thought was best:', self.action_space[next_best])
                 if self.action_space[next_best] not in actions:
                     i = 1
                     while self.action_space[next_best] not in actions:
@@ -299,7 +320,20 @@ class ReflexCaptureAgent(CaptureAgent):
             self.target_net.load_state_dict(self.policy_net.state_dict())
             self.saveModel(self.target_net, 'target{}.pt'.format(self.index))
             self.saveModel(self.policy_net, 'policy{}.pt'.format(self.index))
+        self.action_number += 1
         return bestAction
+
+    # return array of all food-drop positions on the board
+    def get_drop_positions(self, gameState):
+        positions = []
+        x = self.field_mid_width
+        if not self.red:
+            x += 1
+        h = int(self.field_mid_height * 2 + 1)
+        for y in range(1, h):
+            if not gameState.hasWall(x, y):
+                positions.append((x, y))
+        return positions
 
     def saveReplayMemory(self, memory, filename):
         with open('models/{}'.format(filename), 'wb') as fp:
@@ -311,7 +345,7 @@ class ReflexCaptureAgent(CaptureAgent):
             with open('models/{}'.format(filename), 'rb') as fp:
                 memory_list = pickle.load(fp)
             fp.close()
-            memory = ReplayMemory(50000)
+            memory = ReplayMemory(300)
             memory.memory = memory_list
             return memory
         else:
@@ -319,12 +353,12 @@ class ReflexCaptureAgent(CaptureAgent):
                 global global_memory0
                 if len(global_memory0) > 0:
                     return global_memory0
-                return ReplayMemory(50000)
+                return ReplayMemory(300)
             elif self.index == 2:
                 global global_memory2
                 if len(global_memory2) > 0:
                     return global_memory2
-                return ReplayMemory(50000)
+                return ReplayMemory(300)
 
     def saveModel(self, network, filename):
         torch.save(network.state_dict(), 'models/{}'.format(filename))
@@ -356,14 +390,9 @@ class ReflexCaptureAgent(CaptureAgent):
     def getRewards(self, gameState, bestAction):
         return 0
 
-    def food_eaten_flag(self, gameState, best_action):
+    def food_eaten_flag(self):
         flag = False
-        successor = self.getSuccessor(gameState, best_action)
-        if self.red:
-            food = successor.getBlueFood().asList()
-        else:
-            food = successor.getRedFood().asList()
-        if self.current_food_amount == len(food) + 1:
+        if abs(self.current_food_difference_prev - self.current_food_difference) == 1:
             flag = True
         return flag
 
@@ -394,6 +423,7 @@ class ReflexCaptureAgent(CaptureAgent):
         """
         features = self.getFeatures(gameState, action)
         weights = self.getWeights(gameState, action)
+        print(features)
         return features * weights
 
     def getFeatures(self, gameState, action):
@@ -425,37 +455,47 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         successor = self.getSuccessor(gameState, action)
         foodList = self.getFood(successor).asList()
         features['successorScore'] = -len(foodList)  # self.getScore(successor)
-
-        # Compute distance to the nearest food
+        new_pos = successor.getAgentState(self.index).getPosition()
 
         if len(foodList) > 0:  # This should always be True,  but better safe than sorry
+            if successor.getAgentState(self.index).isPacman and self.food_eaten > 3:
+                drop_dist = min([self.getMazeDistance(new_pos, drop) for drop in self.drop_positions])
+                features['foodToDrop'] = -drop_dist
+            else:
+                features['foodToDrop'] = 0
             myPos = successor.getAgentState(self.index).getPosition()
             minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
             features['distanceToFood'] = minDistance
+
+        #print(features)
         return features
 
     def getRewards(self, gameState, bestAction):
         reward = 0
 
         # Agent eats food
-        food_consumed = self.food_eaten_flag(gameState, bestAction)
+        food_consumed = self.food_eaten_flag()
         if food_consumed:
             reward += 1
 
         # Score increases or decreases
         score = gameState.data.score
         if score > 0:
-            reward += 1
+            reward += 10
+        elif score < 0:
+            reward -= 1
+        else:
+            reward += 5
 
         # If agent dies
         death = gameState.getAgentState(self.index).getPosition()
-        if death == (1, 1):
+        if death == (1, 1) and self.action_number > 0:
             reward -= 1
 
         return reward
 
     def getWeights(self, gameState, action):
-        return {'successorScore': 100, 'distanceToFood': -1}
+        return {'successorScore': 100, 'distanceToFood': -1, 'foodToDrop' : 10}
 
 
 class DefensiveReflexAgent(ReflexCaptureAgent):
@@ -485,7 +525,7 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
             dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
             features['invaderDistance'] = min(dists)
         else:
-            features['invaderDistance'] = -10
+            features['invaderDistance'] = -1
 
         if action == Directions.STOP: features['stop'] = 1
         else: features['stop'] = 0
@@ -499,12 +539,18 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
         reward = 0
 
         # check if food you defend is decreasing
-        if self.defended_food < self.total_food:
-            reward -= ((self.total_food/2) - self.defended_food)
+        if self.defended_food < self.total_food/2:
+            reward -= int(((self.total_food/2) - self.defended_food))
+        elif self.defended_food == self.total_food/2:
+            reward += 5
+
+        if gameState.getAgentState(self.index).isPacman:
+            reward -= 1
 
         # Here check if the previous food amount changed
         if self.defended_food_difference < 0:
-            reward += abs(self.defended_food_difference)
+            reward += int(abs(self.defended_food_difference))
+
         return reward
 
     def getWeights(self, gameState, action):

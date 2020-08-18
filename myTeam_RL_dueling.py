@@ -119,8 +119,8 @@ class DummyAgent(CaptureAgent):
         self.epsilon = 0.2 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
         self.penalty = 0 # penalty for each turn
-        self.epochs = 100 # number of epochs for learning
-        self.learning_step = 20 # update Q-target function
+        self.epochs = 50 # number of epochs for learning
+        self.learning_step = 10 # update Q-target function
 
         self.flag_delay = False # slow game visualisation
 
@@ -128,7 +128,7 @@ class DummyAgent(CaptureAgent):
         self.reward_modifiers()
 
         # variables for functions and classes
-        self.state_data = self.create_state_data_simple_v1
+        self.state_data = self.create_state_data_simple
         self.add_reward = self.add_reward
         self.Duel_Q_Network = Duel_Q_Network_very_simple
 
@@ -245,182 +245,14 @@ class DummyAgent(CaptureAgent):
         return tuple(new_pos)
 
     # features space of games state
-    def create_state_data_v1(self, gameState):
-        # food, drop predicted
-        food_future_dist = np.full(5, 10 / (self.my_food_distance + 1))
-        drop_future_dist = np.full(5, 10 / (self.current_drop_distance + 1))
-        if not self.flag_done:
-            for action in self.actions:
-                successor = self.getSuccessor(gameState, action)
-                new_pos = successor.getAgentState(self.index).getPosition()
-                i = self.action_to_index(action)
-                food_dist = min([self.getMazeDistance(new_pos, food) for food in self.my_food_positions])
-                drop_dist = min([self.getMazeDistance(new_pos, drop) for drop in self.drop_positions])
-                food_future_dist[i] = 10 / (food_dist + 1)
-                drop_future_dist[i] = 10 / (drop_dist + 1)
-
-        # data in square around agent of radius self.data_grid_radius
-        x = int(self.my_current_position[0])
-        y = int(self.my_current_position[1])
-        rad = self.data_grid_radius
-        x_0 = x - rad
-        y_0 = y - rad
-        x_1 = x + rad
-        y_1 = y + rad
-        n = self.data_grid_radius * 2 + 1
-        n_sqr = n * n
-        grid_positions = np.zeros([self.features_groups, n_sqr], dtype=int)
-        grid_qualities = np.zeros(self.qualities, dtype=int)
-        for j in range(n):
-            y_current = y_0 + j
-            if y_current < 0:
-                continue
-            if y_current >= self.field_height:
-                break
-            for i in range(n):
-                x_current = x_0 + i
-                if x_current < 0:
-                    continue
-                if x_current >= self.field_width:
-                    break
-                # what inside the grid grid_positions[0]
-                grid_positions[0, j * n + i] = 1
-                # walls grid_positions[1]
-                if gameState.hasWall(x_current, y_current):
-                    grid_positions[1, j * n + i] = 1
-        # food for me grid_positions[2]
-        for pos in self.current_food_positions:
-            (x_t, y_t) = pos
-            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
-                grid_positions[2, (y_t - y_0) * n + x_t - x_0] = 1
-        # food for enemy grid_positions[3]
-        for pos in self.enemy_food_positions:
-            (x_t, y_t) = pos
-            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
-                grid_positions[3, (y_t - y_0) * n + x_t - x_0] = 1
-        # power cell for me grid_positions[4]
-        for pos in self.capsules_for_me:
-            (x_t, y_t) = pos
-            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
-                grid_positions[4, (y_t - y_0) * n + x_t - x_0] = 1
-        # power cell for enemy grid_positions[5]
-        for pos in self.capsules_for_enemy:
-            (x_t, y_t) = pos
-            if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
-                grid_positions[5, (y_t - y_0) * n + x_t - x_0] = 1
-        # friendly agent position grid_positions[6]
-        # friendly scary timer grid_qualities[0] (self) and grid_qualities[1] (friend)
-        for ind in self.my_indices:
-            pos = gameState.getAgentPosition(ind)
-            (x_t, y_t) = pos
-            if pos == self.my_current_position:
-                grid_qualities[0] = gameState.getAgentState(ind).scaredTimer
-                # relative x of the agent
-                grid_qualities[5] = (x_t - self.field_mid_width) / self.field_width
-                # relative y of the agent
-                grid_qualities[6] = (y_t - self.field_mid_height) / self.field_height
-            else:
-                grid_qualities[1] = gameState.getAgentState(ind).scaredTimer
-                # relative x of the friendly agent
-                grid_qualities[7] = (x_t - self.field_mid_width) / self.field_width
-                # relative y of the friendly agent
-                grid_qualities[8] = (y_t - self.field_mid_height) / self.field_height
-                if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
-                    grid_positions[6, (y_t - y_0) * n + x_t - x_0] = 1
-        # enemy positions grid_positions[7] and grid_positions[8]
-        # enemy scary timer grid_qualities[2] and grid_qualities[3]
-        enemy_future_dist = np.zeros((2, 5))
-        for i, ind in enumerate(self.enemy_indices):
-            pos = gameState.getAgentPosition(ind)
-            grid_qualities[2 + i] = gameState.getAgentState(ind).scaredTimer
-            if pos:
-                if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
-                    continue
-                dist = 10 / (self.getMazeDistance(self.my_current_position, pos) + 1)
-                (x_t, y_t) = pos
-                if x_0 <= x_t <= x_1 and y_0 <= y_t <= y_1:
-                    grid_positions[7 + i, (y_t - y_0) * n + x_t - x_0] = 1
-                enemy_future_dist[i] = dist
-                if not self.flag_done:
-                    for action in self.actions:
-                        successor = self.getSuccessor(gameState, action)
-                        new_pos = successor.getAgentState(self.index).getPosition()
-                        enemy_future_dist[i, self.action_to_index(action)] = 10 / (self.getMazeDistance(new_pos, pos) + 1)
-        # food inside
-        grid_qualities[4] = self.food_inside
-        # amount of food for us
-        grid_qualities[9] = len(self.current_food_positions)
-        # amount of food for enemy
-        grid_qualities[10] = len(self.enemy_food_positions)
-        # last action
-        return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_positions.ravel(), grid_qualities, self.get_action_array(self.data_actions[-1])))
-
     def create_state_data_simple(self, gameState):
-        # food, drop predicted
-        food_future_dist = np.full(5, 10 / (self.my_food_distance + 1))
-        drop_future_dist = np.full(5, 10 / (self.current_drop_distance + 1))
-        if not self.flag_done:
-            for action in self.actions:
-                successor = self.getSuccessor(gameState, action)
-                new_pos = successor.getAgentState(self.index).getPosition()
-                i = self.action_to_index(action)
-                food_dist = min([self.getMazeDistance(new_pos, food) for food in self.my_food_positions])
-                drop_dist = min([self.getMazeDistance(new_pos, drop) for drop in self.drop_positions])
-                food_future_dist[i] = 10 / (food_dist + 1)
-                drop_future_dist[i] = 10 / (drop_dist + 1)
-
-        grid_qualities = np.zeros(self.qualities, dtype=int)
-
-        # friendly scary timer grid_qualities[0] (self) and grid_qualities[1] (friend)
-        for ind in self.my_indices:
-            pos = gameState.getAgentPosition(ind)
-            (x_t, y_t) = pos
-            if pos == self.my_current_position:
-                grid_qualities[0] = gameState.getAgentState(ind).scaredTimer
-                # relative x of the agent
-                grid_qualities[5] = (x_t - self.field_mid_width) / self.field_width
-                # relative y of the agent
-                grid_qualities[6] = (y_t - self.field_mid_height) / self.field_height
-            else:
-                grid_qualities[1] = gameState.getAgentState(ind).scaredTimer
-                # relative x of the friendly agent
-                grid_qualities[7] = (x_t - self.field_mid_width) / self.field_width
-                # relative y of the friendly agent
-                grid_qualities[8] = (y_t - self.field_mid_height) / self.field_height
-
-        # enemy scary timer grid_qualities[2] and grid_qualities[3]
-        enemy_future_dist = np.zeros((2, 5))
-        for i, ind in enumerate(self.enemy_indices):
-            pos = gameState.getAgentPosition(ind)
-            grid_qualities[2 + i] = gameState.getAgentState(ind).scaredTimer
-            if pos:
-                if gameState.getAgentState(ind).scaredTimer > 3 and not self.at_home(pos, 0):
-                    continue
-                dist = 10 / (self.getMazeDistance(self.my_current_position, pos) + 1)
-                enemy_future_dist[i] = dist
-                if not self.flag_done:
-                    for action in self.actions:
-                        successor = self.getSuccessor(gameState, action)
-                        new_pos = successor.getAgentState(self.index).getPosition()
-                        enemy_future_dist[i, self.action_to_index(action)] = 10 / (
-                                    self.getMazeDistance(new_pos, pos) + 1)
-        # food inside
-        grid_qualities[4] = self.food_inside
-        # amount of food for us
-        grid_qualities[9] = len(self.current_food_positions)
-        # amount of food for enemy
-        grid_qualities[10] = len(self.enemy_food_positions)
-
-        return np.concatenate((food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_qualities))
-
-    def create_state_data_simple_v1(self, gameState):
         # food, drop, capsule, enemy prediction per action: -1 for leave, 1 for approach
         food_future_dist = np.zeros(5)
         capsule_future_dist = np.zeros(5)
         drop_future_dist = np.zeros(5)
-        enemy_future_dist = np.zeros(5)
+        enemy_future_dist = np.zeros((2, 5))
 
-        grid_qualities = np.zeros(7, dtype=int)
+        grid_qualities = np.zeros(9, dtype=int)
 
         if not self.flag_done:
             for action in self.actions:
@@ -437,22 +269,22 @@ class DummyAgent(CaptureAgent):
             grid_qualities[1] = (x_t - self.field_mid_width) / self.field_width
 
             # enemy data
-            if self.closest_enemy_data:
-                pos, dist, timer = self.closest_enemy_data
-                grid_qualities[2] = int(timer > 0)
-                grid_qualities[3] = 5 / dist
-                for action in self.actions:
-                    i = self.action_to_index(action)
-                    enemy_future_dist[i] = self.get_approaching_enemy_reward(gameState, action, pos, dist)
+            for i, item in enumerate(self.enemy_data):
+                if item:
+                    pos, dist, timer = item
+                    grid_qualities[2 + i] = int(timer > 0)
+                    grid_qualities[4 + i] = 5 / dist
+                    for action in self.actions:
+                        j = self.action_to_index(action)
+                        enemy_future_dist[i, j] = self.get_approaching_enemy_reward(gameState, action, pos, dist)
 
-
-            grid_qualities[4] = self.current_food_amount
-            grid_qualities[5] = 5 / self.my_capsule_distance
-            grid_qualities[6] = self.food_inside
+            grid_qualities[6] = self.current_food_amount
+            grid_qualities[7] = 5 / self.my_capsule_distance
+            grid_qualities[8] = self.food_inside
         # debugging
         # (food_future_dist, drop_future_dist, enemy_future_dist.ravel(), grid_qualities)
 
-        return np.concatenate((food_future_dist, drop_future_dist, capsule_future_dist, enemy_future_dist,grid_qualities))
+        return np.concatenate((food_future_dist, drop_future_dist, capsule_future_dist, enemy_future_dist.ravel(),grid_qualities))
 
     # return arrays of positions of our food, enemy food, our capsules, enemy capsules
     def all_food_positions(self, gameState):
@@ -484,10 +316,9 @@ class DummyAgent(CaptureAgent):
     # return approaching food reward
     def get_approaching_food_reward(self, gameState, action):
         reward = 0
-        successor = self.getSuccessor(gameState, action)
-        new_pos = successor.getAgentState(self.index).getPosition()
         if len(self.my_food_positions) > 0:
-            new_distance = min([self.getMazeDistance(new_pos, food) for food in self.my_food_positions])
+            my_new_pos = self.action_to_pos(action, self.my_current_position)
+            new_distance = min([self.getMazeDistance(my_new_pos, food) for food in self.my_food_positions])
             if new_distance > self.my_food_distance:
                 reward -= 1
             elif new_distance < self.my_food_distance:
@@ -497,10 +328,9 @@ class DummyAgent(CaptureAgent):
     # return approaching capsule reward
     def get_approaching_capsule_reward(self, gameState, action):
         reward = 0
-        successor = self.getSuccessor(gameState, action)
-        new_pos = successor.getAgentState(self.index).getPosition()
         if len(self.capsules_for_me) > 0:
-            new_distance = min([self.getMazeDistance(new_pos, cap) for cap in self.capsules_for_me])
+            my_new_pos = self.action_to_pos(action, self.my_current_position)
+            new_distance = min([self.getMazeDistance(my_new_pos, cap) for cap in self.capsules_for_me])
             if new_distance > self.my_capsule_distance:
                 reward -= 1
             elif new_distance < self.my_capsule_distance:
@@ -510,28 +340,25 @@ class DummyAgent(CaptureAgent):
     # return approaching drop reward
     def get_approaching_drop_reward(self, gameState, action):
         reward = 0
-        successor = self.getSuccessor(gameState, action)
-        new_pos = successor.getAgentState(self.index).getPosition()
-        new_distance = min([self.getMazeDistance(new_pos, drop) for drop in self.drop_positions])
+        my_new_pos = self.action_to_pos(action, self.my_current_position)
+        new_distance = min([self.getMazeDistance(my_new_pos, drop) for drop in self.drop_positions])
         if new_distance > self.current_drop_distance:
             reward -= 1
         elif new_distance < self.current_drop_distance:
             reward += 1
         return reward
 
-    # fill self.closest_enemy_data
-    def create_closest_enemy_data(self, gameState):
-        min_dist = float('inf')
-        for ind in self.enemy_indices:
+    # fill self.enemy_data
+    def create_enemy_data(self, gameState):
+        for i, ind in enumerate(self.enemy_indices):
             pos = gameState.getAgentPosition(ind)
             if pos:
-                timer = gameState.getAgentState(ind).scaredTimer
-                if  timer > 0 and not self.at_home(pos, 0):
-                    continue
-                dist = self.getMazeDistance(pos, self.my_current_position)
-                if dist < min_dist:
-                    min_dist = dist
-                    self.closest_enemy_data = (pos, dist, timer)
+                if self.get_manh_dist(pos, self.my_current_position):
+                    timer = gameState.getAgentState(ind).scaredTimer
+                    if  timer > 0 and not self.at_home(pos, 0):
+                        continue
+                    dist = self.getMazeDistance(pos, self.my_current_position)
+                    self.enemy_data[i] = (pos, dist, timer)
 
     # return approaching enemy reward/penalty
     def get_approaching_enemy_reward(self, gameState, action, pos, dist):
@@ -549,6 +376,14 @@ class DummyAgent(CaptureAgent):
         else:
             reward += adjustment
         return reward
+
+    # get manhattan distance
+    def get_manh_dist(self, pos1, pos2):
+        dist = abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+        if dist > 5:
+            return False
+        else:
+            return True
 
     # return array of all food-drop positions on the board
     def get_drop_positions(self, gameState):
@@ -616,11 +451,9 @@ class DummyAgent(CaptureAgent):
 
     # helper function for chooseAction
     def choose_action_probability(self, output):
-        result = np.exp(output)
-        result = result / np.sum(result)
-        r = random.random()
+        r = np.random.uniform(np.sum(output))
         for i in range(5):
-            r -= result[i]
+            r -= output[i]
             if r < 0:
                 break
         return i
@@ -660,8 +493,8 @@ class DummyAgent(CaptureAgent):
         else:
             self.my_capsule_distance = float('inf')
 
-        self.closest_enemy_data = None
-        self.create_closest_enemy_data(gameState)
+        self.enemy_data = [None, None]
+        self.create_enemy_data(gameState)
 
         state_data = np.asarray(self.state_data(gameState))
         #features = self.my_scaler.transform(state_data.reshape(1, -1))[0]
@@ -671,12 +504,12 @@ class DummyAgent(CaptureAgent):
         result = self.online_Q_network(tensor_features).detach().numpy()[0]
 
         if random.random() < self.epsilon:
-            self.best_action = random.choice(self.actions)
-            # while True:
-            #     i = self.choose_action_probability(result)
-            #     self.best_action = self.index_to_action(i)
-            #     if self.best_action in self.actions:
-            #         break
+            #self.best_action = random.choice(self.actions)
+            while True:
+                i = self.choose_action_probability(result)
+                self.best_action = self.index_to_action(i)
+                if self.best_action in self.actions:
+                    break
         else:
             indices = result.argsort()[::-1]
             for ind in indices:
@@ -704,12 +537,12 @@ class DummyAgent(CaptureAgent):
         self.approaching_enemy_reward = 0
         self.flag_enemy_around = False
         self.flag_enemy_death = False
-        if self.closest_enemy_data:
-            pos, dist = self.closest_enemy_data[:2]
-            self.approaching_enemy_reward = self.get_approaching_enemy_reward(gameState, self.best_action, pos, dist)
-            self.flag_enemy_around = True
-            self.flag_enemy_death = self.check_enemy_deaf(gameState, self.best_action, pos)
-
+        for item in self.enemy_data:
+            if item:
+                pos, dist = item[:2]
+                self.approaching_enemy_reward += self.get_approaching_enemy_reward(gameState, self.best_action, pos, dist)
+                self.flag_enemy_around = True
+                self.flag_enemy_death = self.check_enemy_deaf(gameState, self.best_action, pos)
 
         return self.best_action
 
@@ -838,13 +671,12 @@ class DummyAgent(CaptureAgent):
         return {'states': states, 'next_states': next_states, 'actions': actions, 'rewards': rewards, 'done': done}
 
 
-
 class Agent_North(DummyAgent):
     def reward_modifiers(self):
-        self.score_multiplier = 2
+        self.score_multiplier = 1
         self.enemy_death_reward = 10
         self.my_death_penalty = 20
-        self.stomach_size = 4
+        self.stomach_size = 2
         self.drop_food_multiplier = 1.5
         self.food_eaten_reward = 2
         self.approaching_enemy_multiplier = 1
@@ -852,8 +684,9 @@ class Agent_North(DummyAgent):
         self.approaching_food_multiplier = 1.5
 
     def get_my_food_positions(self):
-        n = int(self.current_food_amount / 2)
-        return self.current_food_positions[n:]
+        # n = int(self.current_food_amount / 2)
+        # return self.current_food_positions[n:]
+        return self.current_food_positions
 
     def load_model(self):
         side = 'North'
@@ -869,16 +702,31 @@ class Agent_South(DummyAgent):
         self.score_multiplier = 1
         self.enemy_death_reward = 20
         self.my_death_penalty = 10
-        self.stomach_size = 3
-        self.drop_food_multiplier = 2
+        self.stomach_size = 1
+        self.drop_food_multiplier = 1
         self.food_eaten_reward = 1
         self.approaching_enemy_multiplier = 2
         self.approaching_drop_multiplier = 1
-        self.approaching_food_multiplier = 0.5
+        self.approaching_food_multiplier = 0.7
 
     def get_my_food_positions(self):
-        n = int((self.current_food_amount + 1) / 2)
-        return self.current_food_positions[:n]
+        # n = int((self.current_food_amount + 1) / 2)
+        # return self.current_food_positions[:n]
+        return self.enemy_food_positions
+
+    def get_approaching_food_reward(self, gameState, action):
+        reward = 0
+        if len(self.my_food_positions) > 0:
+            #self.my_food_positions.sort(key=lambda x: x[1])
+            pos = random.choice(self.my_food_positions)
+            dist = self.getMazeDistance(pos, self.my_current_position)
+            my_new_pos = self.action_to_pos(action, self.my_current_position)
+            new_distance = self.getMazeDistance(pos, my_new_pos)
+            if new_distance > dist:
+                reward -= 1
+            elif new_distance < dist:
+                reward += 1
+        return reward
 
     def load_model(self):
         side = 'South'
@@ -966,11 +814,11 @@ class Duel_Q_Network_very_simple(nn.Module):
 
         #self.fc1 = nn.Linear(31, 21)
 
-        self.fc_value = nn.Linear(27, 9)
-        self.fc_adv = nn.Linear(27, 18)
+        self.fc_value = nn.Linear(34, 11)
+        self.fc_adv = nn.Linear(34, 22)
 
-        self.value = nn.Linear(9, 1)
-        self.adv = nn.Linear(18, 5)
+        self.value = nn.Linear(11, 1)
+        self.adv = nn.Linear(22, 5)
 
         self.a_func = nn.Tanh()
         # self.a_func = nn.Sigmoid()

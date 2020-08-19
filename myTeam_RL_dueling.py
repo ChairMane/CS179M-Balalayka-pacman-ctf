@@ -248,6 +248,7 @@ class DummyAgent(CaptureAgent):
 
     # FEATURE SPACE of games state
     def create_state_data_simple(self, gameState):
+        self.score = self.getScore(gameState)
         # food, drop, capsule, enemy prediction per action: -1 for leave, 1 for approach
         food_future_dist = np.zeros(5)
         capsule_future_dist = np.zeros(5)
@@ -283,7 +284,6 @@ class DummyAgent(CaptureAgent):
             n = 1 if self.red else -1
             grid_qualities[1] = (x_t - self.field_mid_width) / self.field_width * n
 
-            self.score = self.getScore(gameState)
             grid_qualities[6] = self.score
             grid_qualities[7] = 5 / self.my_capsule_distance
             grid_qualities[8] = self.food_inside
@@ -481,6 +481,10 @@ class DummyAgent(CaptureAgent):
         reward = 0
         if self.flag_done:
             reward += self.score * self.score_multiplier
+            if self.score > 0:
+                reward += self.win_reward
+            elif self.score < 0:
+                reward -= self.win_reward
 
         if self.flag_enemy_death:
             reward += self.enemy_death_reward
@@ -732,15 +736,16 @@ class DummyAgent(CaptureAgent):
 
 class Agent_North(DummyAgent):
     def reward_modifiers(self):
-        self.score_multiplier = 0
+        self.score_multiplier = 2
+        self.win_reward = 50
         self.enemy_death_reward = 20
         self.my_death_penalty = 20
         self.stomach_size = 3
-        self.food_eaten_reward = 1
+        self.food_eaten_reward = 0.5
         self.drop_food_multiplier = 2
-        self.approaching_drop_multiplier = 2
-        self.approaching_enemy_multiplier = 1
-        self.approaching_food_multiplier = 0.5
+        self.approaching_drop_multiplier = 0.4
+        self.approaching_enemy_multiplier = 0.2
+        self.approaching_food_multiplier = 0.1
 
     def get_my_food_positions(self):
         n = int(self.current_food_amount / 2)
@@ -758,15 +763,16 @@ class Agent_North(DummyAgent):
 
 class Agent_South(DummyAgent):
     def reward_modifiers(self):
-        self.score_multiplier = 0
+        self.score_multiplier = 2
+        self.win_reward = 50
         self.enemy_death_reward = 20
         self.my_death_penalty = 20
         self.stomach_size = 3
-        self.food_eaten_reward = 1
+        self.food_eaten_reward = 0.5
         self.drop_food_multiplier = 2
-        self.approaching_drop_multiplier = 2
-        self.approaching_enemy_multiplier = 1
-        self.approaching_food_multiplier = 0.5
+        self.approaching_drop_multiplier = 0.4
+        self.approaching_enemy_multiplier = 0.2
+        self.approaching_food_multiplier = 0.1
 
     def get_my_food_positions(self):
         n = int((self.current_food_amount + 1) / 2)

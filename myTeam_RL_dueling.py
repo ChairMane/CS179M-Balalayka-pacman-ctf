@@ -132,7 +132,7 @@ class DummyAgent(CaptureAgent):
         # variables for functions and classes
         self.state_data = self.create_state_data_simple
         self.add_reward = self.add_reward
-        self.Duel_Q_Network = Duel_Q_Network_very_simple
+        self.Duel_Q_Network = Duel_Q_Network_simple
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_done = False # if game over
@@ -686,7 +686,7 @@ class DummyAgent(CaptureAgent):
         self.num_games_played += 1
 
         # debugging
-        if self.num_games_played % 50 == 0:
+        if self.num_games_played % 5 == 0:
             #print('Total Epochs: ', self.total_epochs)
             print('-=TOTAL GAMES=- ', self.num_games_played)
         #print(losses)
@@ -760,7 +760,7 @@ class Agent_North(DummyAgent):
         self.drop_food_multiplier = 3
         self.approaching_drop_multiplier = 2
         self.approaching_enemy_multiplier = 2
-        self.approaching_food_multiplier = 0.5
+        self.approaching_food_multiplier = 1.5
 
     def get_my_food_positions(self):
         #n = int(self.current_food_amount / 2)
@@ -788,7 +788,7 @@ class Agent_South(DummyAgent):
         self.drop_food_multiplier = 3
         self.approaching_drop_multiplier = 2
         self.approaching_enemy_multiplier = 2
-        self.approaching_food_multiplier = 0.5
+        self.approaching_food_multiplier = 1.5
 
     def get_my_food_positions(self):
         #n = int((self.current_food_amount + 1) / 2)
@@ -859,14 +859,14 @@ class Duel_Q_Network_simple(nn.Module):
     def __init__(self):
         super(Duel_Q_Network_simple, self).__init__()
 
-        self.fc1 = nn.Linear(37, 42)
-        self.fc2 = nn.Linear(42, 21)
+        self.fc1 = nn.Linear(37, 43)
+        self.fc2 = nn.Linear(43, 29)
 
-        self.fc_value = nn.Linear(21, 7)
-        self.fc_adv = nn.Linear(21, 11)
+        self.fc_value = nn.Linear(29, 11)
+        self.fc_adv = nn.Linear(29, 13)
 
-        self.value = nn.Linear(7, 1)
-        self.adv = nn.Linear(11, 5)
+        self.value = nn.Linear(11, 1)
+        self.adv = nn.Linear(13, 5)
 
         self.a_func = nn.Tanh()
         #self.a_func = nn.Sigmoid()

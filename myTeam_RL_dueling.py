@@ -110,6 +110,7 @@ class DummyAgent(CaptureAgent):
         self.flag_death = False # if agent got eaten
         self.flag_enemy_around = False  # if enemy is around
         self.flag_enemy_death = False # if enemy got eaten
+        self.turn_counter = 0
 
         self.my_initial_pos = gameState.getInitialAgentPosition(self.index)
 
@@ -120,7 +121,6 @@ class DummyAgent(CaptureAgent):
 
         self.epsilon = 0.2 # exploration rate
         self.gamma = 0.99 # gamma for discounted reward
-        self.penalty = 0 # penalty for each turn
         self.epochs = 100 # number of epochs for learning
         self.learning_step = 20 # update Q-target function
 
@@ -255,7 +255,7 @@ class DummyAgent(CaptureAgent):
         drop_future_dist = np.zeros(5)
         enemy_future_dist = np.zeros((2, 5))
 
-        grid_qualities = np.zeros(9, dtype=int)
+        grid_qualities = np.zeros(12, dtype=int)
 
         #flag_enemy = False
 
@@ -287,6 +287,10 @@ class DummyAgent(CaptureAgent):
             grid_qualities[6] = self.score
             grid_qualities[7] = 5 / self.my_capsule_distance
             grid_qualities[8] = self.food_inside
+            grid_qualities[9] = self.current_food_amount
+            grid_qualities[10] = self.enemy_food_amount
+            self.turn_counter += 1
+            grid_qualities[11] = 20 / (301 - self.turn_counter)
 
         return np.concatenate((food_future_dist, drop_future_dist, capsule_future_dist, enemy_future_dist.ravel(),grid_qualities))
 
@@ -324,9 +328,11 @@ class DummyAgent(CaptureAgent):
             my_new_pos = self.action_to_pos(action, self.my_current_position)
             new_distance = min([self.getMazeDistance(my_new_pos, food) for food in self.my_food_positions])
             if new_distance > self.my_food_distance:
-                reward -= 1
+                reward = -1
             elif new_distance < self.my_food_distance:
-                reward += 1
+                reward = 1
+            else:
+                reward = -0.1
         return reward
 
     # return approaching capsule reward
@@ -336,20 +342,26 @@ class DummyAgent(CaptureAgent):
             my_new_pos = self.action_to_pos(action, self.my_current_position)
             new_distance = min([self.getMazeDistance(my_new_pos, cap) for cap in self.capsules_for_me])
             if new_distance > self.my_capsule_distance:
-                reward -= 1
+                reward = -1
             elif new_distance < self.my_capsule_distance:
-                reward += 1
+                reward = 1
+            else:
+                reward = -0.1
         return reward
 
     # return approaching drop reward
     def get_approaching_drop_reward(self, gameState, action):
         reward = 0
+        if self.at_home(self.my_current_position, 0):
+            return reward
         my_new_pos = self.action_to_pos(action, self.my_current_position)
         new_distance = min([self.getMazeDistance(my_new_pos, drop) for drop in self.drop_positions])
         if new_distance > self.current_drop_distance:
-            reward -= 1
+            reward = -1
         elif new_distance < self.current_drop_distance:
-            reward += 1
+            reward = 1
+        else:
+            reward = -0.1
         return reward
 
     # fill self.enemy_data
@@ -479,12 +491,13 @@ class DummyAgent(CaptureAgent):
         self.rewards_values = np.concatenate((self.rewards_values, [reward]))
     def add_reward(self):
         reward = 0
-        if self.flag_done:
-            reward += self.score * self.score_multiplier
-            if self.score > 0:
-                reward += self.win_reward
-            elif self.score < 0:
-                reward -= self.win_reward
+        # reward -= self.penalty
+        # if self.flag_done:
+        #     reward += self.score * self.score_multiplier
+        #     if self.score > 0:
+        #         reward += self.win_reward
+        #     elif self.score < 0:
+        #         reward -= self.win_reward
 
         if self.flag_enemy_death:
             reward += self.enemy_death_reward
@@ -550,8 +563,9 @@ class DummyAgent(CaptureAgent):
 
         self.current_food_positions, self.enemy_food_positions, self.capsules_for_me, self.capsules_for_enemy = self.all_food_positions(gameState)
 
-        self.current_food_positions.sort(key=lambda x: x[1])
+        #self.current_food_positions.sort(key=lambda x: x[1])
         self.current_food_amount = len(self.current_food_positions)
+        self.enemy_food_amount = len(self.enemy_food_positions)
         self.my_food_positions = self.get_my_food_positions()
         if len(self.my_food_positions) > 0:
             self.my_food_distance = min([self.getMazeDistance(self.my_current_position, food) for food in self.my_food_positions])
@@ -672,9 +686,9 @@ class DummyAgent(CaptureAgent):
         self.num_games_played += 1
 
         # debugging
-        if self.num_games_played % 10 == 0:
-            print('Total Epochs: ', self.total_epochs)
-            print('Total games: ', self.num_games_played)
+        if self.num_games_played % 50 == 0:
+            #print('Total Epochs: ', self.total_epochs)
+            print('-=TOTAL GAMES=- ', self.num_games_played)
         #print(losses)
         print('Reward Sum: ', np.sum(self.rewards_values[1:]))
         #print(self.rewards_values[1:])
@@ -736,21 +750,22 @@ class DummyAgent(CaptureAgent):
 
 class Agent_North(DummyAgent):
     def reward_modifiers(self):
-        self.score_multiplier = 2
-        self.win_reward = 50
-        self.enemy_death_reward = 20
-        self.my_death_penalty = 20
+        self.penalty = 0  # penalty for each turn
+        self.score_multiplier = 0
+        self.win_reward = 0
+        self.enemy_death_reward = 30
+        self.my_death_penalty = 30
         self.stomach_size = 3
         self.food_eaten_reward = 0.5
-        self.drop_food_multiplier = 2
-        self.approaching_drop_multiplier = 0.4
-        self.approaching_enemy_multiplier = 0.2
-        self.approaching_food_multiplier = 0.1
+        self.drop_food_multiplier = 3
+        self.approaching_drop_multiplier = 2
+        self.approaching_enemy_multiplier = 2
+        self.approaching_food_multiplier = 0.5
 
     def get_my_food_positions(self):
-        n = int(self.current_food_amount / 2)
-        return self.current_food_positions[n:]
-        #return self.current_food_positions
+        #n = int(self.current_food_amount / 2)
+        #return self.current_food_positions[n:]
+        return self.current_food_positions
 
     def load_model(self):
         side = 'North'
@@ -763,35 +778,38 @@ class Agent_North(DummyAgent):
 
 class Agent_South(DummyAgent):
     def reward_modifiers(self):
-        self.score_multiplier = 2
-        self.win_reward = 50
-        self.enemy_death_reward = 20
-        self.my_death_penalty = 20
+        self.penalty = 0  # penalty for each turn
+        self.score_multiplier = 0
+        self.win_reward = 0
+        self.enemy_death_reward = 30
+        self.my_death_penalty = 30
         self.stomach_size = 3
         self.food_eaten_reward = 0.5
-        self.drop_food_multiplier = 2
-        self.approaching_drop_multiplier = 0.4
-        self.approaching_enemy_multiplier = 0.2
-        self.approaching_food_multiplier = 0.1
+        self.drop_food_multiplier = 3
+        self.approaching_drop_multiplier = 2
+        self.approaching_enemy_multiplier = 2
+        self.approaching_food_multiplier = 0.5
 
     def get_my_food_positions(self):
-        n = int((self.current_food_amount + 1) / 2)
-        return self.current_food_positions[:n]
-        #return self.enemy_food_positions
+        #n = int((self.current_food_amount + 1) / 2)
+        #return self.current_food_positions[:n]
+        return self.enemy_food_positions
 
-    # def get_approaching_food_reward(self, gameState, action):
-    #     reward = 0
-    #     if len(self.my_food_positions) > 0:
-    #         #self.my_food_positions.sort(key=lambda x: x[1])
-    #         pos = random.choice(self.my_food_positions)
-    #         dist = self.getMazeDistance(pos, self.my_current_position)
-    #         my_new_pos = self.action_to_pos(action, self.my_current_position)
-    #         new_distance = self.getMazeDistance(pos, my_new_pos)
-    #         if new_distance > dist:
-    #             reward -= 1
-    #         elif new_distance < dist:
-    #             reward += 1
-    #     return reward
+    def get_approaching_food_reward(self, gameState, action):
+        reward = 0
+        if len(self.my_food_positions) > 0:
+            #self.my_food_positions.sort(key=lambda x: x[1])
+            pos = random.choice(self.my_food_positions)
+            dist = self.getMazeDistance(pos, self.my_current_position)
+            my_new_pos = self.action_to_pos(action, self.my_current_position)
+            new_distance = self.getMazeDistance(pos, my_new_pos)
+            if new_distance > dist:
+                reward = -1
+            elif new_distance < dist:
+                reward = 1
+            else:
+                reward = -0.1
+        return reward
 
     def load_model(self):
         side = 'South'
@@ -841,7 +859,7 @@ class Duel_Q_Network_simple(nn.Module):
     def __init__(self):
         super(Duel_Q_Network_simple, self).__init__()
 
-        self.fc1 = nn.Linear(34, 42)
+        self.fc1 = nn.Linear(37, 42)
         self.fc2 = nn.Linear(42, 21)
 
         self.fc_value = nn.Linear(21, 7)
@@ -877,10 +895,10 @@ class Duel_Q_Network_very_simple(nn.Module):
     def __init__(self):
         super(Duel_Q_Network_very_simple, self).__init__()
 
-        self.fc1 = nn.Linear(34, 21)
+        self.fc1 = nn.Linear(37, 23)
 
-        self.fc_value = nn.Linear(21, 7)
-        self.fc_adv = nn.Linear(21, 11)
+        self.fc_value = nn.Linear(23, 7)
+        self.fc_adv = nn.Linear(23, 11)
 
         self.value = nn.Linear(7, 1)
         self.adv = nn.Linear(11, 5)

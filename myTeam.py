@@ -95,7 +95,7 @@ class DummyAgent(CaptureAgent):
         """
 
 
-        time.sleep(0.06)
+        #time.sleep(0.06)
 
         global best_action
         actions = gameState.getLegalActions(self.index)

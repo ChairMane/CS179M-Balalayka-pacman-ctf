@@ -110,8 +110,6 @@ class DummyAgent(CaptureAgent):
 
         self.data_set_current = []
 
-        self.epsilon = 0.2 # exploration rate
-
         self.flag_delay = False # slow game visualisation
 
         # variables for functions and classes
@@ -427,15 +425,12 @@ class DummyAgent(CaptureAgent):
         self.online_Q_network.eval()
         result = self.online_Q_network(tensor_features).detach().numpy()[0]
 
-        if random.random() < self.epsilon:
-            #self.choose_action_by_probability(result)
-            self.best_action = random.choice(self.actions)
-        else:
-            indices = result.argsort()[::-1]
-            for ind in indices:
-                self.best_action = self.index_to_action(ind.item())
-                if self.best_action in self.actions:
-                    break
+
+        indices = result.argsort()[::-1]
+        for ind in indices:
+            self.best_action = self.index_to_action(ind.item())
+            if self.best_action in self.actions:
+                break
 
         self.flag_food_eaten = self.food_eaten_flag(gameState, self.best_action)
         if self.flag_food_eaten:

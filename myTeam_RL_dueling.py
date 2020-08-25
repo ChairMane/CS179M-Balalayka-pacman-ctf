@@ -121,7 +121,7 @@ class DummyAgent(CaptureAgent):
         self.data_actions = ['Stop']
 
         self.epsilon = 0.2 # exploration rate
-        self.gamma = 0.99 # gamma for discounted reward
+        self.gamma = 0.7 # gamma for discounted reward
         self.epochs = 100 # number of epochs for learning
         self.learning_step = 20 # update Q-target function
 
@@ -132,8 +132,8 @@ class DummyAgent(CaptureAgent):
 
         # variables for functions and classes
         self.state_data = self.create_state_data_simple
-        self.add_reward = self.add_reward
-        self.Duel_Q_Network = Duel_Q_Network_comp
+        self.add_reward = self.add_reward_old
+        self.Duel_Q_Network = Duel_Q_Network_very_simple
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_done = False # if game over
@@ -517,21 +517,10 @@ class DummyAgent(CaptureAgent):
 
     # helper function for chooseAction
     def choose_action_by_probability(self, output):
-        tempo = (output - np.min(output)) / (np.max(output) - np.min(output))
-        tempo = np.exp(tempo) / np.sum(tempo)
-        tempo = np.cumsum(tempo)
-        done = False
-        for i in range(3):
-            r = random.random()
-            for ind in range(5):
-                if r < tempo[ind]:
-                    break
-            self.best_action = self.index_to_action(ind)
-            if self.best_action in self.actions:
-                done = True
-                break
-        if not done:
-            self.best_action = random.choice(self.actions)
+        tempo = np.array([output[i] for i in range(output.shape[0]) if self.index_to_action(i) in self.actions])
+        tempo = np.exp((tempo - tempo.max()) / 1)
+        tempo = tempo / np.sum(tempo)
+        self.best_action = np.random.choice(self.actions, p=tempo)
 
     # -=ACTION=-
     def chooseAction(self, gameState):
@@ -580,8 +569,8 @@ class DummyAgent(CaptureAgent):
         result = self.online_Q_network(tensor_features).detach().numpy()[0]
 
         if random.random() < self.epsilon:
-            #self.choose_action_by_probability(result)
-            self.best_action = random.choice(self.actions)
+            self.choose_action_by_probability(result)
+            #self.best_action = random.choice(self.actions)
         else:
             indices = result.argsort()[::-1]
             for ind in indices:
@@ -752,12 +741,12 @@ class Agent_North(DummyAgent):
         self.score_multiplier = 0
         self.win_reward = 0
         self.enemy_death_reward = 5
-        self.my_death_penalty = 0
-        self.stomach_size = 0
+        self.my_death_penalty = 5
+        self.stomach_size = 3
         self.food_eaten_reward = 1
-        self.drop_food_multiplier = 3
+        self.drop_food_multiplier = 2
         self.approaching_drop_multiplier = 1
-        self.approaching_enemy_multiplier = 0
+        self.approaching_enemy_multiplier = 1
         self.approaching_food_multiplier = 1
 
     def get_my_food_positions(self):
@@ -780,12 +769,12 @@ class Agent_South(DummyAgent):
         self.score_multiplier = 0
         self.win_reward = 0
         self.enemy_death_reward = 5
-        self.my_death_penalty = 0
-        self.stomach_size = 0
+        self.my_death_penalty = 5
+        self.stomach_size = 3
         self.food_eaten_reward = 1
-        self.drop_food_multiplier = 3
+        self.drop_food_multiplier = 2
         self.approaching_drop_multiplier = 1
-        self.approaching_enemy_multiplier = 0
+        self.approaching_enemy_multiplier = 1
         self.approaching_food_multiplier = 1
 
     def get_my_food_positions(self):

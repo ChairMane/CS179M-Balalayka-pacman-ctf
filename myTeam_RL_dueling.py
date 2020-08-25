@@ -750,8 +750,10 @@ class Agent_North(DummyAgent):
         self.approaching_food_multiplier = 1
 
     def get_my_food_positions(self):
+        # North & South
         n = int(self.current_food_amount / 2)
         return self.current_food_positions[n:]
+        # Offense & Deffense
         #return self.current_food_positions
 
     def load_model(self):
@@ -778,8 +780,10 @@ class Agent_South(DummyAgent):
         self.approaching_food_multiplier = 1
 
     def get_my_food_positions(self):
+        # North & South
         n = int((self.current_food_amount + 1) / 2)
         return self.current_food_positions[:n]
+        # Offense & Deffense
         #return self.enemy_food_positions
 
     # get capsules from our side and distance
@@ -803,8 +807,6 @@ class Agent_South(DummyAgent):
     #             reward = -1
     #         elif new_distance < dist:
     #             reward = 1
-    #         else:
-    #             reward = -0.1
     #     return reward
 
     def load_model(self):

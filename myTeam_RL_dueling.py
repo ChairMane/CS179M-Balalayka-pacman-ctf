@@ -795,7 +795,7 @@ class DummyAgent(CaptureAgent):
     def create_tensors_and_history(self, states, next_states, actions, rewards, done):
         if self.my_history is None:
             history = self.create_history(states, next_states, actions, rewards, done)
-            return states, next_states, actions, rewards, done, my_history
+            return states, next_states, actions, rewards, done, history
 
         r_states = torch.cat((states, self.my_history['states']))
         r_next_states = torch.cat((next_states, self.my_history['next_states']))

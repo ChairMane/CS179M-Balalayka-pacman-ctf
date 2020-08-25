@@ -120,7 +120,7 @@ class DummyAgent(CaptureAgent):
         self.flag_done = False # if game over
 
         self.online_Q_network, self.optimizer, self.my_scaler, self.my_history, self.total_epochs, self.num_games_played = self.load_model()
-
+        #print('GAMES ', self.num_games_played)
         #self.my_scaler = Normalizer()
 
 

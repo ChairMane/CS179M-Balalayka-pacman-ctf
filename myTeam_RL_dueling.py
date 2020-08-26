@@ -133,7 +133,7 @@ class DummyAgent(CaptureAgent):
         # variables for functions and classes
         self.state_data = self.create_state_data_simple
         self.add_reward = self.add_reward_old
-        self.Duel_Q_Network = Duel_Q_Network_very_simple
+        self.Duel_Q_Network = Duel_Q_Network_simple
 
         self.rewards_values = np.empty(0) # reward for each step
         self.flag_done = False # if game over
@@ -467,8 +467,8 @@ class DummyAgent(CaptureAgent):
     # calculate and add reward for each turn to the reward array
     def add_reward_old(self):
         reward = 0
-        # if self.prev_best_action == 'Stop':
-        #     reward -= self.penalty
+        if self.prev_best_action == 'Stop':
+            reward -= self.penalty
         # if self.flag_done:
         #     reward += self.score * self.score_multiplier
         #     if self.score > 0:
@@ -726,7 +726,8 @@ class DummyAgent(CaptureAgent):
 
         k = r_done.size(0)
         perm = torch.randperm(k)
-        k = int(k / 2)
+        if k > 10000:
+            k = 10000
         idx = perm[:k]
         history = self.create_history(r_states[idx], r_next_states[idx], r_actions[idx], r_rewards[idx], r_done[idx])
         return r_states, r_next_states, r_actions, r_rewards, r_done, history
@@ -741,7 +742,7 @@ class Agent_North(DummyAgent):
         self.score_multiplier = 0
         self.win_reward = 0
         self.enemy_death_reward = 5
-        self.my_death_penalty = 5
+        self.my_death_penalty = 20
         self.stomach_size = 3
         self.food_eaten_reward = 1
         self.drop_food_multiplier = 2
@@ -751,10 +752,11 @@ class Agent_North(DummyAgent):
 
     def get_my_food_positions(self):
         # North & South
-        n = int(self.current_food_amount / 2)
-        return self.current_food_positions[n:]
-        # Offense & Deffense
-        #return self.current_food_positions
+        # n = int(self.current_food_amount / 2)
+        # return self.current_food_positions[n:]
+
+        # Offense
+        return self.current_food_positions
 
     def load_model(self):
         side = 'North'
@@ -781,33 +783,35 @@ class Agent_South(DummyAgent):
 
     def get_my_food_positions(self):
         # North & South
-        n = int((self.current_food_amount + 1) / 2)
-        return self.current_food_positions[:n]
-        # Offense & Deffense
-        #return self.enemy_food_positions
+        # n = int((self.current_food_amount + 1) / 2)
+        # return self.current_food_positions[:n]
+
+        # Deffense
+        return self.enemy_food_positions
 
     # get capsules from our side and distance
-    # def get_capsules_for_me_dist(self):
-    #     capsules = self.capsules_for_enemy
-    #     if len(capsules) > 0:
-    #         dist = min([self.getMazeDistance(self.my_current_position, cap) for cap in capsules])
-    #     else:
-    #         dist = float('inf')
-    #     return capsules, dist
+    def get_capsules_for_me_dist(self):
+        capsules = self.capsules_for_enemy
+        if len(capsules) > 0:
+            dist = min([self.getMazeDistance(self.my_current_position, cap) for cap in capsules])
+        else:
+            dist = float('inf')
+        return capsules, dist
 
-    # def get_approaching_food_reward(self, gameState, action):
-    #     reward = 0
-    #     if len(self.my_food_positions) > 0:
-    #         #self.my_food_positions.sort(key=lambda x: x[1])
-    #         pos = random.choice(self.my_food_positions)
-    #         dist = self.getMazeDistance(pos, self.my_current_position)
-    #         my_new_pos = self.action_to_pos(action, self.my_current_position)
-    #         new_distance = self.getMazeDistance(pos, my_new_pos)
-    #         if new_distance > dist:
-    #             reward = -1
-    #         elif new_distance < dist:
-    #             reward = 1
-    #     return reward
+    # defend food on home side
+    def get_approaching_food_reward(self, gameState, action):
+        reward = 0
+        if len(self.my_food_positions) > 0:
+            #self.my_food_positions.sort(key=lambda x: x[1])
+            pos = random.choice(self.my_food_positions)
+            dist = self.getMazeDistance(pos, self.my_current_position)
+            my_new_pos = self.action_to_pos(action, self.my_current_position)
+            new_distance = self.getMazeDistance(pos, my_new_pos)
+            if new_distance > dist:
+                reward = -1
+            elif new_distance < dist:
+                reward = 1
+        return reward
 
     def load_model(self):
         side = 'South'

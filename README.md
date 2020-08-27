@@ -22,52 +22,35 @@ This version (cshelton/pacman-ctf github repo) was modified by Christian
 Shelton (cshelton@cs.ucr.edu) on June 23, 2020 to run under Python 3.
 
 
-## Getting Started
-(much of this is from the original HTML documentation, in origdoc/)
+## Getting Started with Comrades
+### Testing
+To run Comrades against other agents, the Python file `myTeam_RL_Agent_1.py` is to be used. 
+Since `myTeam_RL_Agent_1.py` has been trained to do well, the models that were trained are required to be
+in the same directory as this Python file. The models are called `model_North.pth` and `model_South.pth`. 
 
-### Short Version:
+<br>The commands to run Comrades against an opponent:
+<br>- As red team: `python capture.py --red=myTeam_RL_Agent_1`
+<br>- As blue team: `python capture.py --blue=myTeam_RL_Agent_1`
+<br>
+Any extra flags can be added to run on different layouts, and against any other customer agent.
 
-run `python capture.py`
+### Training
+The file used for training is `myTeam_RL_dueling.py`. To train the agent from scratch, make sure to delete the current models.
+Training from scratch will create new models that can be used by `myTeam_RL_Agent_1.py`. 
+Training can also use the current models and update them. To get a better idea of how
+Comrades learn, training from scratch displays differences in win rates properly. 
 
-make your agents by modifying `myTeam.py`
+<br>The commands to train Comrades against an opponent:
+<br>- As red team: `python capture.py --red=myTeam_RL_dueling -n N -q`
+<br>- As blue team: `python capture.py --blue=myTeam_RL_dueling -n N -q`
+<br>Where `N` is how many games you want to play.
 
-run `python capture.py --red=myTeam` to test your team as Red
+## Design
+### Reinforcement Learning
+Many games, especially Atari games, are the focus for reinforcement learning. Pacman being an Atari game sparked the 
+interest in using this form of learning. Our agent, Comrades uses reinforcement learning to navigate the mazes, and 
+maneuver their way around enemies. Reinforcement learning is perfect for allowing your agent to learn on its own by rewards and penalties.
 
-run `python capture.py --help` to see other options
-
-
-### Longer Version:
-
-The challenge is to design agents to play Capture-the-Flag in a Pacman-like
-arena.   
-
-![Example Game](/origdoc/capture_the_flag.png)
-
-#### Rules
-
-**Layout:** The Pacman map is divided into two halves: blue (right) and red (left).  Red agents (which all have even indices) must defend the red food while trying to eat the blue food.  When on the red side, a red agent is a ghost.  When crossing into enemy territory, the agent becomes a Pacman.
-
-**Scoring:**  When a Pacman eats a food dot, the food is stored up inside of that Pacman and removed from the board.  When a Pacman returns to his side of the board, he "deposits" the food dots he is carrying, earning one point per food pellet delivered.  Red team scores are positive, while Blue team scores are negative.
-
-**Eating Pacman:** When a Pacman is eaten by an opposing ghost, the Pacman returns to its starting position (as a ghost).  The food dots that the Pacman was carrying are deposited back onto the board.  No points are awarded for eating an opponent.
-
-**Power capsules:** If Pacman eats a power capsule, agents on the opposing team become "scared" for the next 40 moves, or until they are eaten and respawn, whichever comes sooner.  Agents that are "scared" are susceptible while in the form of ghosts (i.e. while on their own team's side) to being eaten by Pacman.  Specifically, if Pacman collides with a "scared" ghost, Pacman is unaffected and the ghost respawns at its starting position (no longer in the "scared" state).
-
-**Observations:** Agents can only observe an opponent's configuration (position and direction) if they or their teammate is within 5 squares (Manhattan distance).  In addition, an agent always gets a noisy distance reading for each agent on the board, which can be used to approximately locate unobserved opponents.
-
-**Winning:** A game ends when one team eats all but two of the opponents' dots.  Games are also limited to 1200 agent moves (300 moves per each of the four agents).  If this move limit is reached, whichever team has eaten the most food wins. If the score is zero (i.e., tied) this is recorded as a tie game.
-
-**Computation Time:** Each agent has 1 second to return each action. Each move which does not return within one second will incur a warning.  After three warnings, or any single move taking more than 3 seconds, the game is forfeit.  There will be an initial start-up allowance of 15 seconds (use the `registerInitialState` method). If you agent times out or otherwise throws an exception, an error message will be present in the log files, which you can download from the results page (see below).
-
-#### Key data structures
-
-`CaptureAgent` (in `captureAgent.py`) is a useful base class for your agents.
-It has a variety of methods that can return useful information.  This includes a `distancer` field that contains a `distanceCalculator` object that can automatically calculate (and cache) the distances between every two points in the maze.
-
-`GameState` (in `capture.py`) has still more information that can be queried.  A current `GameState` object is passed into your agents' `chooseAction` methods.  Note that `GameState` objects can return the set of legal actions for an agent and can generate new `GameState` s that would result from any action.
-
-`game.py` has code that defines `Directions`, `Configurations`, `AgentState`, and a `Grid`, all of which might be handy and save extra work on your part.
-
-`util.py` has code that might prove helpful.  Of particular note is the `Counter` class which implements a dictionary, but where unused keys default to mapping to 0 (instead of undefined).  A `Counter` mapping positions (integer pairs) to a real value can be used with `CaptureAgent.displayDistributionsOverPositions` to color the cells on the map with debugging information.
-
-`myTeam.py` has skeleton code for generating a team of agents.  Its format should not be changed and needs to have the function `createTeam` as specified.  You should copy this file, change its name, and use it to build your own team.
+### PyTorch
+In order to make it easier on us, [PyTorch](https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html) was used for reinforcement learning.
+A Dueling Deep Q Network was used to get a Q value. A total of 37 features are fed into the network, with 5 outputs in the final layer. 

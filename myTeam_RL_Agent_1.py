@@ -362,24 +362,6 @@ class Comrades(CaptureAgent):
             return True
         return False
 
-    # helper function for chooseAction
-    def choose_action_by_probability(self, output):
-        tempo = (output - np.min(output)) / (np.max(output) - np.min(output))
-        tempo = np.exp(tempo) / np.sum(tempo)
-        tempo = np.cumsum(tempo)
-        done = False
-        for i in range(3):
-            r = random.random()
-            for ind in range(5):
-                if r < tempo[ind]:
-                    break
-            self.best_action = self.index_to_action(ind)
-            if self.best_action in self.actions:
-                done = True
-                break
-        if not done:
-            self.best_action = random.choice(self.actions)
-
     # -=ACTION=-
     def chooseAction(self, gameState):
         """

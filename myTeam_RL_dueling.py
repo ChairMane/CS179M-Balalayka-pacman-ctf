@@ -62,7 +62,7 @@ def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='Agen
 # Agents #
 ##########
 
-class DummyAgent(CaptureAgent):
+class Comrades(CaptureAgent):
     """
     A Dummy agent to serve as an example of the necessary agent structure.
     You should look at baselineTeam.py for more details about how to
@@ -115,8 +115,6 @@ class DummyAgent(CaptureAgent):
 
         self.my_initial_pos = gameState.getInitialAgentPosition(self.index)
 
-        self.data_grid_radius = 5
-        self.features_groups = 9
         self.data_set_current = []
         self.data_actions = ['Stop']
 
@@ -132,7 +130,7 @@ class DummyAgent(CaptureAgent):
 
         # variables for functions and classes
         self.state_data = self.create_state_data_simple
-        self.add_reward = self.add_reward_old
+        self.add_reward = self.add_reward
         self.Duel_Q_Network = Duel_Q_Network_simple
 
         self.rewards_values = np.empty(0) # reward for each step
@@ -182,47 +180,6 @@ class DummyAgent(CaptureAgent):
     def index_to_action(self, index):
         actions = ['Stop', 'North', 'East', 'South', 'West']
         return actions[index]
-
-    # if action reversed
-    def get_reverse(self, action):
-        if action == 'North':
-            return 'South'
-        if action == 'East':
-            return 'West'
-        if action == 'South':
-            return 'North'
-        if action == 'West':
-            return 'East'
-        return action
-
-    # return array like [0, 1, 0, 0, 0] where 1 indicate which action was taken
-    def get_action_array(self, act):
-        move = np.zeros(5, dtype=int)
-
-        def stop():
-            move[0] = 1
-
-        def north():
-            move[1] = 1
-
-        def east():
-            move[2] = 1
-
-        def south():
-            move[3] = 1
-
-        def west():
-            move[4] = 1
-
-        switcher = {
-            'Stop': stop,
-            'North': north,
-            'East': east,
-            'South': south,
-            'West': west
-        }
-        switcher[act]()
-        return move
 
     # return new position
     def action_to_pos(self, action, pos):
@@ -360,15 +317,6 @@ class DummyAgent(CaptureAgent):
         return reward
 
     # fill self.enemy_data
-    def create_enemy_data_old(self, gameState):
-        for i, ind in enumerate(self.enemy_indices):
-            pos = gameState.getAgentPosition(ind)
-            if pos and self.get_manh_dist(pos, self.my_current_position):
-                    timer = gameState.getAgentState(ind).scaredTimer
-                    if  timer > 0 and not self.at_home(pos, 0):
-                        continue
-                    dist = self.getMazeDistance(pos, self.my_current_position)
-                    self.enemy_data[i] = (pos, dist, timer)
     def create_enemy_data(self, gameState):
         for i, ind in enumerate(self.enemy_indices):
             pos = gameState.getAgentPosition(ind)
@@ -378,21 +326,6 @@ class DummyAgent(CaptureAgent):
                     self.enemy_data[i] = (pos, dist, timer)
 
     # return approaching enemy reward/penalty
-    def get_approaching_enemy_reward_old(self, gameState, action, pos, dist):
-        reward = 0
-        my_new_pos = self.action_to_pos(action, self.my_current_position)
-        new_dist = self.getMazeDistance(my_new_pos, pos)
-        adjustment = 0
-        if new_dist > dist:
-            adjustment = 1
-        elif new_dist < dist:
-            adjustment = -1
-
-        if gameState.getAgentState(self.index).scaredTimer == 0 and self.at_home(my_new_pos, 0):
-            reward -= adjustment
-        else:
-            reward += adjustment
-        return reward
     def get_approaching_enemy_reward(self, gameState, action, pos, dist, timer):
         reward = 0
         my_new_pos = self.action_to_pos(action, self.my_current_position)
@@ -465,7 +398,7 @@ class DummyAgent(CaptureAgent):
         return False
 
     # calculate and add reward for each turn to the reward array
-    def add_reward_old(self):
+    def add_reward(self):
         reward = 0
         if self.prev_best_action == 'Stop':
             reward -= self.penalty
@@ -492,26 +425,6 @@ class DummyAgent(CaptureAgent):
             reward += self.approaching_drop_reward * self.approaching_drop_multiplier
         else:
             reward += self.approaching_food_reward * self.approaching_food_multiplier
-
-        self.rewards_values = np.concatenate((self.rewards_values, [reward]))
-    def add_reward(self):
-        reward = 0
-        if self.prev_best_action == 'Stop':
-            reward -= self.penalty
-
-        if self.flag_enemy_death:
-            reward += self.enemy_death_reward
-        elif self.flag_death:
-            reward -= self.my_death_penalty
-
-        if self.food_inside == 0:
-            reward += self.food_inside_prev * self.drop_food_multiplier
-        elif self.flag_food_eaten:
-            reward += self.food_eaten_reward
-
-        reward += self.approaching_enemy_reward * self.approaching_enemy_multiplier
-        reward += self.approaching_drop_reward * self.approaching_drop_multiplier
-        reward += self.approaching_food_reward * self.approaching_food_multiplier
 
         self.rewards_values = np.concatenate((self.rewards_values, [reward]))
 
@@ -671,7 +584,7 @@ class DummyAgent(CaptureAgent):
         self.num_games_played += 1
 
         # debugging
-        if self.num_games_played % 3 == 0:
+        if self.num_games_played % 5 == 0:
             #print('Total Epochs: ', self.total_epochs)
             print('-=TOTAL GAMES=- ', self.num_games_played)
         #print(losses)
@@ -713,6 +626,7 @@ class DummyAgent(CaptureAgent):
                     'games': games}
         torch.save(my_model, file_path)
 
+    # create tensors for learning and data history for the future
     def create_tensors_and_history(self, states, next_states, actions, rewards, done):
         if self.my_history is None:
             history = self.create_history(states, next_states, actions, rewards, done)
@@ -732,11 +646,12 @@ class DummyAgent(CaptureAgent):
         history = self.create_history(r_states[idx], r_next_states[idx], r_actions[idx], r_rewards[idx], r_done[idx])
         return r_states, r_next_states, r_actions, r_rewards, r_done, history
 
+    # create history helper function
     def create_history(self, states, next_states, actions, rewards, done):
         return {'states': states, 'next_states': next_states, 'actions': actions, 'rewards': rewards, 'done': done}
 
 
-class Agent_North(DummyAgent):
+class Agent_North(Comrades):
     def reward_modifiers(self):
         self.penalty = 0.3  # penalty for each turn
         self.score_multiplier = 0
@@ -744,12 +659,13 @@ class Agent_North(DummyAgent):
         self.enemy_death_reward = 5
         self.my_death_penalty = 20
         self.stomach_size = 3
-        self.food_eaten_reward = 1
-        self.drop_food_multiplier = 2
+        self.food_eaten_reward = 2
+        self.drop_food_multiplier = 3
         self.approaching_drop_multiplier = 1
         self.approaching_enemy_multiplier = 1
         self.approaching_food_multiplier = 1
 
+    # positions of the target food for the agent North
     def get_my_food_positions(self):
         # North & South
         # n = int(self.current_food_amount / 2)
@@ -767,12 +683,12 @@ class Agent_North(DummyAgent):
         self.save_model_helper(side, model, optimizer, scaler, history, epochs, games)
 
 
-class Agent_South(DummyAgent):
+class Agent_South(Comrades):
     def reward_modifiers(self):
         self.penalty = 0.3  # penalty for each turn
         self.score_multiplier = 0
         self.win_reward = 0
-        self.enemy_death_reward = 5
+        self.enemy_death_reward = 15
         self.my_death_penalty = 5
         self.stomach_size = 3
         self.food_eaten_reward = 1
@@ -781,6 +697,7 @@ class Agent_South(DummyAgent):
         self.approaching_enemy_multiplier = 1
         self.approaching_food_multiplier = 1
 
+    # positions of the target food for the agent South
     def get_my_food_positions(self):
         # North & South
         # n = int((self.current_food_amount + 1) / 2)

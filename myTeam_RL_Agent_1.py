@@ -62,7 +62,7 @@ def createTeam(firstIndex, secondIndex, isRed, first='Agent_North', second='Agen
 # Agents #
 ##########
 
-class DummyAgent(CaptureAgent):
+class Comrades(CaptureAgent):
     """
     A Dummy agent to serve as an example of the necessary agent structure.
     You should look at baselineTeam.py for more details about how to
@@ -116,7 +116,6 @@ class DummyAgent(CaptureAgent):
         self.state_data = self.create_state_data_simple
         self.Duel_Q_Network = Duel_Q_Network_simple
 
-        self.rewards_values = np.empty(0) # reward for each step
         self.flag_done = False # if game over
 
         self.online_Q_network, self.optimizer, self.my_scaler, self.my_history, self.total_epochs, self.num_games_played = self.load_model()
@@ -191,19 +190,20 @@ class DummyAgent(CaptureAgent):
 
         grid_qualities = np.zeros(12, dtype=int)
 
-        #flag_enemy = False
+        # flag_enemy = False
 
         if not self.flag_done:
             # enemy data
             for i, item in enumerate(self.enemy_data):
                 if item:
-                    #flag_enemy = True
+                    # flag_enemy = True
                     pos, dist, timer = item
                     grid_qualities[2 + i] = timer
                     grid_qualities[4 + i] = 5 / dist
                     for action in self.actions:
                         j = self.action_to_index(action)
-                        enemy_future_dist[i, j] = self.get_approaching_enemy_reward(gameState, action, pos, dist, timer)
+                        enemy_future_dist[i, j] = self.get_approaching_enemy_reward(gameState, action, pos, dist,
+                                                                                    timer)
 
             for action in self.actions:
                 ind = self.action_to_index(action)
@@ -219,14 +219,15 @@ class DummyAgent(CaptureAgent):
             grid_qualities[1] = (x_t - self.field_mid_width) / self.field_width * n
 
             grid_qualities[6] = self.score
-            grid_qualities[7] = 5 / self.my_capsule_distance
+            grid_qualities[7] = 5 / (self.my_capsule_distance + 1)
             grid_qualities[8] = self.food_inside
             grid_qualities[9] = self.current_food_amount
             grid_qualities[10] = self.enemy_food_amount
             self.turn_counter += 1
             grid_qualities[11] = 20 / (301 - self.turn_counter)
 
-        return np.concatenate((food_future_dist, drop_future_dist, capsule_future_dist, enemy_future_dist.ravel(),grid_qualities))
+        return np.concatenate(
+            (food_future_dist, drop_future_dist, capsule_future_dist, enemy_future_dist.ravel(), grid_qualities))
 
     # return arrays of positions of our food, enemy food, our capsules, enemy capsules
     def all_food_positions(self, gameState):
@@ -246,14 +247,14 @@ class DummyAgent(CaptureAgent):
             capsules_for_enemy = blue_capsules
         return current_food_positions, enemy_food_positions, capsules_for_me, capsules_for_enemy
 
-    # return initial amount of enemy food
-    def get_enemy_food_amount(self, gameState):
-        blue_food = gameState.getBlueFood().asList()
-        red_food = gameState.getRedFood().asList()
-        if self.red:
-            return len(blue_food)
+    # get power capsules from enemy side and distance
+    def get_capsules_for_me_dist(self):
+        capsules = self.capsules_for_us
+        if len(capsules) > 0:
+            dist = min([self.getMazeDistance(self.my_current_position, cap) for cap in capsules])
         else:
-            return len(red_food)
+            dist = float('inf')
+        return capsules, dist
 
     # return approaching food reward
     def get_approaching_food_reward(self, gameState, action):
@@ -297,9 +298,9 @@ class DummyAgent(CaptureAgent):
         for i, ind in enumerate(self.enemy_indices):
             pos = gameState.getAgentPosition(ind)
             if pos and self.get_manh_dist(pos, self.my_current_position):
-                    timer = gameState.getAgentState(ind).scaredTimer
-                    dist = self.getMazeDistance(pos, self.my_current_position)
-                    self.enemy_data[i] = (pos, dist, timer)
+                timer = gameState.getAgentState(ind).scaredTimer
+                dist = self.getMazeDistance(pos, self.my_current_position)
+                self.enemy_data[i] = (pos, dist, timer)
 
     # return approaching enemy reward/penalty
     def get_approaching_enemy_reward(self, gameState, action, pos, dist, timer):
@@ -465,11 +466,15 @@ class DummyAgent(CaptureAgent):
         return online_Q_network, optimizer, scaler, history, epochs, games
 
 
-class Agent_North(DummyAgent):
+class Agent_North(Comrades):
 
+    # positions of the target food for the agent North
     def get_my_food_positions(self):
-        #n = int(self.current_food_amount / 2)
-        #return self.current_food_positions[n:]
+        # North & South
+        # n = int(self.current_food_amount / 2)
+        # return self.current_food_positions[n:]
+
+        # Offense
         return self.current_food_positions
 
     def load_model(self):
@@ -477,17 +482,31 @@ class Agent_North(DummyAgent):
         return self.load_model_helper(side)
 
 
-class Agent_South(DummyAgent):
+class Agent_South(Comrades):
 
+    # positions of the target food for the agent South
     def get_my_food_positions(self):
-        #n = int((self.current_food_amount + 1) / 2)
-        #return self.current_food_positions[:n]
+        # North & South
+        # n = int((self.current_food_amount + 1) / 2)
+        # return self.current_food_positions[:n]
+
+        # Deffense
         return self.enemy_food_positions
 
+    # get capsules from our side and distance
+    def get_capsules_for_me_dist(self):
+        capsules = self.capsules_for_enemy
+        if len(capsules) > 0:
+            dist = min([self.getMazeDistance(self.my_current_position, cap) for cap in capsules])
+        else:
+            dist = float('inf')
+        return capsules, dist
+
+    # defend food on home side
     def get_approaching_food_reward(self, gameState, action):
         reward = 0
         if len(self.my_food_positions) > 0:
-            #self.my_food_positions.sort(key=lambda x: x[1])
+            # self.my_food_positions.sort(key=lambda x: x[1])
             pos = random.choice(self.my_food_positions)
             dist = self.getMazeDistance(pos, self.my_current_position)
             my_new_pos = self.action_to_pos(action, self.my_current_position)
@@ -496,49 +515,12 @@ class Agent_South(DummyAgent):
                 reward = -1
             elif new_distance < dist:
                 reward = 1
-            else:
-                reward = -0.1
         return reward
 
     def load_model(self):
         side = 'South'
         return self.load_model_helper(side)
 
-
-class Duel_Q_Network_1000(nn.Module):
-    def __init__(self):
-        super(Duel_Q_Network_1000, self).__init__()
-
-        self.fc1 = nn.Linear(1125, 800)
-        self.fc2 = nn.Linear(800, 512)
-
-        self.fc_value = nn.Linear(512, 128)
-        self.fc_adv = nn.Linear(512, 128)
-
-        self.value = nn.Linear(128, 1)
-        self.adv = nn.Linear(128, 5)
-
-        self.a_func = nn.Sigmoid()
-        #self.a_func = nn.LeakyReLU()
-
-        for mod in self.modules():
-            if isinstance(mod, nn.Linear):
-                torch.nn.init.xavier_uniform_(mod.weight)
-
-    def forward(self, state):
-        y = self.a_func(self.fc1(state))
-        y = self.a_func(self.fc2(y))
-
-        value = self.a_func(self.fc_value(y))
-        adv = self.a_func(self.fc_adv(y))
-
-        value = self.value(value)
-        adv = self.adv(adv)
-
-        adv_average = torch.mean(adv, dim=1, keepdim=True)
-        Q = value + adv - adv_average
-
-        return Q
 
 class Duel_Q_Network_simple(nn.Module):
     def __init__(self):
@@ -568,38 +550,6 @@ class Duel_Q_Network_simple(nn.Module):
         value = self.a_func(self.fc_value(y))
         adv = self.a_func(self.fc_adv(y))
 
-        value = self.value(value)
-        adv = self.adv(adv)
-
-        adv_average = torch.mean(adv, dim=1, keepdim=True)
-        Q = value + adv - adv_average
-
-        return Q
-
-class Duel_Q_Network_very_simple(nn.Module):
-    def __init__(self):
-        super(Duel_Q_Network_very_simple, self).__init__()
-
-        self.fc1 = nn.Linear(37, 23)
-
-        self.fc_value = nn.Linear(23, 7)
-        self.fc_adv = nn.Linear(23, 11)
-
-        self.value = nn.Linear(7, 1)
-        self.adv = nn.Linear(11, 5)
-
-        self.a_func = nn.Tanh()
-        # self.a_func = nn.Sigmoid()
-        # self.a_func = nn.LeakyReLU()
-
-        for mod in self.modules():
-            if isinstance(mod, nn.Linear):
-                torch.nn.init.xavier_uniform_(mod.weight)
-
-    def forward(self, state):
-        y = self.a_func(self.fc1(state))
-        value = self.a_func(self.fc_value(y))
-        adv = self.a_func(self.fc_adv(y))
         value = self.value(value)
         adv = self.adv(adv)
 

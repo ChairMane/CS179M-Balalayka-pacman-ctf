@@ -122,6 +122,7 @@ class Comrades(CaptureAgent):
         self.gamma = 0.7 # gamma for discounted reward
         self.epochs = 100 # number of epochs for learning
         self.learning_step = 20 # update Q-target function
+        self.history_size = 10000 # amount of samples kept from previous games
 
         self.flag_delay = False # slow game visualisation
 
@@ -640,8 +641,8 @@ class Comrades(CaptureAgent):
 
         k = r_done.size(0)
         perm = torch.randperm(k)
-        if k > 10000:
-            k = 10000
+        if k > self.history_size:
+            k = self.history_size
         idx = perm[:k]
         history = self.create_history(r_states[idx], r_next_states[idx], r_actions[idx], r_rewards[idx], r_done[idx])
         return r_states, r_next_states, r_actions, r_rewards, r_done, history
@@ -657,7 +658,7 @@ class Agent_North(Comrades):
         self.score_multiplier = 0
         self.win_reward = 0
         self.enemy_death_reward = 5
-        self.my_death_penalty = 20
+        self.my_death_penalty = 10
         self.stomach_size = 3
         self.food_eaten_reward = 2
         self.drop_food_multiplier = 3
@@ -688,11 +689,11 @@ class Agent_South(Comrades):
         self.penalty = 0.3  # penalty for each turn
         self.score_multiplier = 0
         self.win_reward = 0
-        self.enemy_death_reward = 15
+        self.enemy_death_reward = 10
         self.my_death_penalty = 5
         self.stomach_size = 3
         self.food_eaten_reward = 1
-        self.drop_food_multiplier = 2
+        self.drop_food_multiplier = 1
         self.approaching_drop_multiplier = 1
         self.approaching_enemy_multiplier = 1
         self.approaching_food_multiplier = 1

@@ -119,10 +119,11 @@ class Comrades(CaptureAgent):
         self.data_actions = ['Stop']
 
         self.epsilon = 0.2 # exploration rate
-        self.gamma = 0.7 # gamma for discounted reward
+        self.gamma = 0.85 # gamma for discounted reward
         self.epochs = 100 # number of epochs for learning
         self.learning_step = 20 # update Q-target function
         self.history_size = 10000 # amount of samples kept from previous games
+        self.train_buffer_size = 1000
 
         self.flag_delay = False # slow game visualisation
 
@@ -559,8 +560,8 @@ class Comrades(CaptureAgent):
         self.online_Q_network.train()
 
         # debugging
-        #print('SIZE: ', done.size())
-        # self.optimizer = torch.optim.Adam(self.online_Q_network.parameters(), lr=1e-4)
+        #print('SIZE buffer: ', done.size())
+        #self.optimizer = torch.optim.Adam(self.online_Q_network.parameters(), lr=1e-4)
         #losses = []
 
         for epoch in range(self.epochs):
@@ -628,7 +629,7 @@ class Comrades(CaptureAgent):
         torch.save(my_model, file_path)
 
     # create tensors for learning and data history for the future
-    def create_tensors_and_history(self, states, next_states, actions, rewards, done):
+    def create_tensors_and_history_old(self, states, next_states, actions, rewards, done):
         if self.my_history is None:
             history = self.create_history(states, next_states, actions, rewards, done)
             return states, next_states, actions, rewards, done, history
@@ -646,6 +647,39 @@ class Comrades(CaptureAgent):
         idx = perm[:k]
         history = self.create_history(r_states[idx], r_next_states[idx], r_actions[idx], r_rewards[idx], r_done[idx])
         return r_states, r_next_states, r_actions, r_rewards, r_done, history
+    def create_tensors_and_history(self, states, next_states, actions, rewards, done):
+        if self.my_history is None:
+            history = self.create_history(states, next_states, actions, rewards, done)
+            return states, next_states, actions, rewards, done, history
+
+        k = self.my_history['done'].size(0)
+        perm = torch.randperm(k)
+        c = k
+        if k > self.train_buffer_size:
+            c = self.train_buffer_size
+        idx = perm[:c]
+
+        r_states = torch.cat((states, self.my_history['states'][idx]))
+        r_next_states = torch.cat((next_states, self.my_history['next_states'][idx]))
+        r_actions = torch.cat((actions, self.my_history['actions'][idx]))
+        r_rewards = torch.cat((rewards, self.my_history['rewards'][idx]))
+        r_done = torch.cat((done, self.my_history['done'][idx]))
+
+        c = k
+        if k > self.history_size:
+            c = self.history_size
+        idx = perm[:c]
+
+        h_states = torch.cat((states, self.my_history['states'][idx]))
+        h_next_states = torch.cat((next_states, self.my_history['next_states'][idx]))
+        h_actions = torch.cat((actions, self.my_history['actions'][idx]))
+        h_rewards = torch.cat((rewards, self.my_history['rewards'][idx]))
+        h_done = torch.cat((done, self.my_history['done'][idx]))
+
+        #print('SIZE history: ', h_done.size())
+
+        history = self.create_history(h_states, h_next_states, h_actions, h_rewards, h_done)
+        return r_states, r_next_states, r_actions, r_rewards, r_done, history
 
     # create history helper function
     def create_history(self, states, next_states, actions, rewards, done):
@@ -658,13 +692,13 @@ class Agent_North(Comrades):
         self.score_multiplier = 0
         self.win_reward = 0
         self.enemy_death_reward = 5
-        self.my_death_penalty = 10
+        self.my_death_penalty = 5
         self.stomach_size = 3
         self.food_eaten_reward = 2
         self.drop_food_multiplier = 3
-        self.approaching_drop_multiplier = 1
-        self.approaching_enemy_multiplier = 1
-        self.approaching_food_multiplier = 1
+        self.approaching_drop_multiplier = 2
+        self.approaching_enemy_multiplier = 2
+        self.approaching_food_multiplier = 2
 
     # positions of the target food for the agent North
     def get_my_food_positions(self):
@@ -689,14 +723,14 @@ class Agent_South(Comrades):
         self.penalty = 0.3  # penalty for each turn
         self.score_multiplier = 0
         self.win_reward = 0
-        self.enemy_death_reward = 10
+        self.enemy_death_reward = 5
         self.my_death_penalty = 5
         self.stomach_size = 3
         self.food_eaten_reward = 1
         self.drop_food_multiplier = 1
-        self.approaching_drop_multiplier = 1
-        self.approaching_enemy_multiplier = 1
-        self.approaching_food_multiplier = 1
+        self.approaching_drop_multiplier = 2
+        self.approaching_enemy_multiplier = 2
+        self.approaching_food_multiplier = 2
 
     # positions of the target food for the agent South
     def get_my_food_positions(self):
@@ -720,7 +754,6 @@ class Agent_South(Comrades):
     def get_approaching_food_reward(self, gameState, action):
         reward = 0
         if len(self.my_food_positions) > 0:
-            #self.my_food_positions.sort(key=lambda x: x[1])
             pos = random.choice(self.my_food_positions)
             dist = self.getMazeDistance(pos, self.my_current_position)
             my_new_pos = self.action_to_pos(action, self.my_current_position)

@@ -54,3 +54,6 @@ maneuver their way around enemies. Reinforcement learning is perfect for allowin
 ### PyTorch
 In order to make it easier on us, [PyTorch](https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html) was used for reinforcement learning.
 A Dueling Deep Q Network was used to get a Q value. A total of 37 features are fed into the network, with 5 outputs in the final layer. 
+
+### Final Report
+To get the full details of this project, please find `report.pdf` in our base directory.
